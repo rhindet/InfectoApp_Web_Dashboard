@@ -21,11 +21,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [currentArticle, setCurrentArticle] = useState<Article | null>(null);
 
-  // Opciones por nivel (se llenan desde /nivelesScraping/niveles/temas)
+  // Solo nivel 0 en la raíz
   const [dd1Options, setDd1Options] = useState<Option[]>([]);
-  const [dd2Options, setDd2Options] = useState<Option[]>([]);
-  const [dd3Options, setDd3Options] = useState<Option[]>([]);
-  const [dd4ptions, setDd4ptions] = useState<Option[]>([]);
 
   // Modal "Mover a…"
   const [open, setOpen] = useState(false);
@@ -58,17 +55,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         const apiUrl = import.meta.env.VITE_API_URL;
         const res = await fetch(`${apiUrl}/nivelesScraping/niveles/temas`);
         const json = await res.json();
-
-        // Convierte la respuesta a arrays de Option
+        // Solo raíz (nivel 0)
         const opts0: Option[] = (json?.[0] ?? []).map((it: any) => ({ value: it._id, label: it.nombre }));
-        const opts1: Option[] = (json?.[1] ?? []).map((it: any) => ({ value: it._id, label: it.nombre }));
-        const opts2: Option[] = (json?.[2] ?? []).map((it: any) => ({ value: it._id, label: it.nombre }));
-        const opts3: Option[] = (json?.[3] ?? []).map((it: any) => ({ value: it._id, label: it.nombre }));
-
         setDd1Options(opts0);
-        setDd2Options(opts1);
-        setDd3Options(opts2);
-        setDd4ptions(opts3);
       } catch (e) {
         console.error('Error cargando temas:', e);
       }
@@ -78,49 +67,61 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     fetchData();
   }, []);
 
-  // Utilidad: Option -> DriveNode (carpeta)
+  // Utils
   const optionToFolder = (levelPrefix: string) => (opt: Option, index?: number): DriveNode => ({
     id: `${levelPrefix}:${opt.value}`,
     name: opt.label,
     type: "folder",
-    // Ejemplo: marca algunas como favoritas si quieres (pestaña Starred)
     starred: index !== undefined ? index % 3 === 0 : false,
   });
 
-  // Loader de carpetas usando dd1Options..dd4ptions
+  const parseFullId = (fullId: string) => {
+    // fullId: "L<number>:<mongoId>"
+    const [prefix, rawId] = fullId.split(':');
+    const m = /^L(\d+)$/.exec(prefix ?? '');
+    const level = m ? Number(m[1]) : null;
+    return { level, rawId: rawId ?? '' };
+  };
+
+  // Loader de carpetas:
+  // - raíz (null) => SOLO opts0
+  // - al hacer click en una carpeta => pedir hijos por API /nivelesScraping/:id/:nextLevel
   const loadChildren = useCallback(async (parentId: string | null): Promise<DriveNode[]> => {
-    // Si aún no hay datos, devuelve vacío (evita errores)
-    const hasAny =
-      dd1Options.length || dd2Options.length || dd3Options.length || dd4ptions.length;
-    if (!hasAny) return [];
+    const apiUrl = import.meta.env.VITE_API_URL;
 
-    // Raíz: muestra todos los de nivel 0
+    // 1) raíz: solo opciones de nivel 0
     if (parentId === null) {
-      return dd1Options.map(optionToFolder("L0"));
+      return dd1Options.map(optionToFolder('L0'));
     }
 
-    // L0 -> L1
-    if (parentId.startsWith("L0:")) {
-      return dd2Options.map(optionToFolder("L1"));
-    }
+    // 2) carpeta clickeada: parsear nivel e id
+    const { level, rawId } = parseFullId(parentId);
+    if (level === null || !rawId) return [];
 
-    // L1 -> L2
-    if (parentId.startsWith("L1:")) {
-      return dd3Options.map(optionToFolder("L2"));
-    }
+    const nextLevel = level + 1; // L0 -> 1, L1 -> 2, etc
 
-    // L2 -> L3
-    if (parentId.startsWith("L2:")) {
-      return dd4ptions.map(optionToFolder("L3"));
-    }
+    try {
+      // Tu backend: GET /nivelesScraping/:id/:level
+      const res = await fetch(`${apiUrl}/nivelesScraping/${rawId}/${nextLevel}`);
+      const json = await res.json();
+      console.log(json)
+      console.log("json2")
 
-    // L3 no tiene hijos
-    if (parentId.startsWith("L3:")) {
+
+      // json esperado: array de { _id, nombre }
+      const asNodes: DriveNode[] = (Array.isArray(json) ? json : []).map((it: any) => ({
+        id: `L${nextLevel}:${it._id}`,
+        name: it.nombre ?? 'Sin nombre',
+        type: 'folder',        // si tu API distingue archivos, cámbialo según corresponda
+        starred: false,
+      }));
+
+      return asNodes;
+    } catch (err) {
+      console.error('Error cargando hijos:', err);
       return [];
     }
-
-    return [];
-  }, [dd1Options, dd2Options, dd3Options, dd4ptions]);
+  }, [dd1Options]);
 
   // Guardar (crear/editar)
   const handleSaveArticle = async (data: {
@@ -138,7 +139,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       setCurrentArticle(null);
       return;
     }
-    // crear → abrir modal para elegir carpeta de destino
+    // crear → abrir modal para elegir carpeta de destino (se resolverá dinámicamente)
     setPendingArticle(data);
     setOpen(true);
   };
@@ -150,7 +151,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
     const apiUrl = import.meta.env.VITE_API_URL;
 
-    // Si quieres guardar solo el ObjectId (sin el prefijo "Lx:")
+    // Guardar solo el ObjectId (quitar "Lx:")
     const rawId = folderId.includes(":") ? folderId.split(":")[1] : folderId;
 
     const newArticle: Article = {
@@ -159,7 +160,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       ref_tabla_nivel0: pendingArticle.ref_tabla_nivel0 ?? null,
       ref_tabla_nivel1: pendingArticle.ref_tabla_nivel1 ?? null,
       ref_tabla_nivel2: pendingArticle.ref_tabla_nivel2 ?? null,
-      ref_tabla_nivel3: rawId, // carpeta elegida (id "limpio")
+      ref_tabla_nivel3: rawId, // id limpio de la carpeta elegida
     } as any;
 
     try {
