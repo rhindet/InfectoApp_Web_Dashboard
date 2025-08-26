@@ -5,8 +5,7 @@ import ArticleList from './ArticleList';
 import ArticleEditor from './ArticleEditor';
 import ArticleView from './ArticleView';
 import { Article, User } from '../types';
- 
-import { DriveNode, ModalMoveDialog } from './ModalArchives'; // ojo: ruta correcta
+import { DriveNode, ModalMoveDialog } from './ModalArchives';
 
 interface DashboardProps {
   user: User;
@@ -18,6 +17,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [articles, setArticles] = useState<Article[]>([]);
   const [currentArticle, setCurrentArticle] = useState<Article | null>(null);
+
+  const [dd1Options, setDd1Options] = useState<Option[]>([]); // opciones cargadas
+  const [dd2Options, setDd2Options] = useState<Option[]>([]); // opciones cargadas
+  const [dd3Options, setDd3Options] = useState<Option[]>([]); // opciones cargadas
+  const [dd4ptions, setDd4ptions] = useState<Option[]>([]); // opciones cargadas
+  type Option = { value: string; label: string };
+
 
   // Modal "Mover a…"
   const [open, setOpen] = useState(false);
@@ -31,7 +37,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     ref_tabla_nivel3?: string | null;
   }>(null);
 
-  // Carga inicial (ajusta a tu API)
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -39,22 +44,43 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         const res = await fetch(`${apiUrl}/articles`);
         const json = await res.json();
         setArticles(json);
+
+        
+
+
       } catch (err) {
         console.error('Error cargando datos:', err);
       } finally {
         setLoading(false);
       }
     };
+
+     const getTemas = async() => {
+              const apiUrl = import.meta.env.VITE_API_URL;
+          const res = await fetch(`${apiUrl}/nivelesScraping/niveles/temas`);
+                  const json = await res.json(); 
+                  console.log(json)
+                  const opts0 = json[0].map(it => ({ value: it._id, label: it.nombre }));
+                  const opts1 = json[1].map(it => ({ value: it._id, label: it.nombre }));
+                  const opts2 = json[2].map(it => ({ value: it._id, label: it.nombre }));
+                  const opts3 = json[3].map(it => ({ value: it._id, label: it.nombre }));
+                  setDd1Options(opts0)
+                  setDd2Options(opts1)
+                  setDd3Options(opts2)
+                  setDd4ptions(opts3)
+     } 
+    getTemas()
     fetchData();
   }, []);
 
-  // Loader de carpetas para el modal (cámbialo por tu API)
+  // Loader de carpetas para el modal (sustituye por tu API)
   const loadChildren = useCallback(async (parentId: string | null): Promise<DriveNode[]> => {
+    console.log(dd1Options[0].label) 
     const fakeTree: Record<string, DriveNode[]> = {
       root: [
-        { id: 'f1', name: 'Download', type: 'folder' },
-        { id: 'f2', name: 'Terraria', type: 'folder', starred: true },
-        { id: 'f3', name: 'POO', type: 'folder' },
+        { id: 'f1', name: dd1Options[0].label, type: 'folder' },
+        { id: 'f2', name: dd1Options[1].label, type: 'folder', starred: true },
+        { id: 'f3', name: dd1Options[2].label, type: 'folder' },
       ],
       f1: [{ id: 'm1', name: 'song.mp3', type: 'file' }],
       f2: [{ id: 'x1', name: 'Saves', type: 'folder' }, { id: 'x2', name: 'Screenshots', type: 'folder' }],
@@ -66,7 +92,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     return fakeTree[parentId ?? 'root'] ?? [];
   }, []);
 
-  // Guardar (crear/editar)
   const handleSaveArticle = async (data: {
     _id?: string; tema: string; contenidos: string[];
     ref_tabla_nivel0?: string | null;
@@ -75,7 +100,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     ref_tabla_nivel3?: string | null;
   }) => {
     if (data._id) {
-      // actualizar existente (ajusta a tu API si corresponde)
       setArticles((prev) =>
         prev.map((a) => (a._id === data._id ? { ...a, ...data, updatedAt: new Date().toISOString() } as any : a))
       );
@@ -83,13 +107,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       setCurrentArticle(null);
       return;
     }
-
-    // Crear: primero elegimos carpeta destino en el modal
+    // crear → seleccionar carpeta
     setPendingArticle(data);
     setOpen(true);
   };
 
-  // Cuando el usuario elige carpeta
   const handleMoveTo = async (folderId: string) => {
     setOpen(false);
     if (!pendingArticle) return;
@@ -102,7 +124,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       ref_tabla_nivel0: pendingArticle.ref_tabla_nivel0 ?? null,
       ref_tabla_nivel1: pendingArticle.ref_tabla_nivel1 ?? null,
       ref_tabla_nivel2: pendingArticle.ref_tabla_nivel2 ?? null,
-      ref_tabla_nivel3: folderId, // ← usamos la carpeta elegida
+      ref_tabla_nivel3: folderId, // carpeta elegida
     } as any;
 
     try {
@@ -209,7 +231,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         <div className="flex-1 p-6">{loading ? 'Cargando…' : renderContent()}</div>
       </div>
 
-      {/* Modal “Mover a…” montado siempre, controlado por `open` */}
+      {/* Modal “Mover a…” controlado por estado */}
       <ModalMoveDialog
         isOpen={open}
         itemName={pendingArticle?.tema ?? 'Nuevo artículo'}
