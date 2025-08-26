@@ -32,7 +32,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
   loadChildren,
   rootId = null,
 }) => {
-  // ---- HOOKS siempre en el mismo orden (no condicionales) ----
+  // Hooks SIEMPRE en el mismo orden:
   const [path, setPath] = useState<{ id: NodeId | null; name: string }[]>([]);
   const [nodes, setNodes] = useState<DriveNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -53,7 +53,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
       .finally(() => setLoading(false));
   }, [isOpen, currentParentId, loadChildren]);
 
-  // Reset de estado al cerrar
+  // Reset al cerrar
   useEffect(() => {
     if (isOpen) return;
     setPath([]);
@@ -62,16 +62,14 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     setTab("suggested");
   }, [isOpen]);
 
-  // 👉 Este useMemo debe ir ANTES del early return
+  // Debe ir antes del early-return
   const filtered = useMemo(() => {
     if (tab === "starred") return nodes.filter((n) => n.starred);
-    return nodes; // suggested/all
+    return nodes;
   }, [nodes, tab]);
 
-  // ---- Early return después de los hooks
   if (!isOpen) return null;
 
-  // Handlers (no hooks)
   const enterFolder = (n: DriveNode) => {
     if (n.type !== "folder") return;
     setPath((prev) => [...prev, { id: n.id, name: n.name }]);
@@ -191,4 +189,4 @@ const Breadcrumb: React.FC<{
       ))}
     </div>
   );
-};
+}; 
