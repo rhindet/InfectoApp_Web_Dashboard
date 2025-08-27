@@ -1,41 +1,34 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Bold, Italic, Underline, List, ListOrdered, Save, X, Table, PlusCircle, Highlighter, Square
+  Bold, Italic, Underline, List, ListOrdered, Save, X, Table,
+  PlusCircle, Highlighter, Square, Type
 } from 'lucide-react';
 import { Article } from '../types';
 
 interface ArticleEditorProps {
   article?: Article;
   onSave: (article: Partial<Article>) => void;
+  onUpdate: (article: Partial<Article>) => void;
   onCancel: () => void;
 }
 
 type Option = { value: string; label: string };
 
-const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel }) => {
+const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel, onUpdate }) => {
   const [title, setTitle] = useState<string>(article?.tema ?? '');
   const [content, setContent] = useState<string>(article?.contenidos?.[0] ?? '');
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Dropdowns (ocultos pero funcionales)
-  const [dd1, setDd1] = useState<string>('');
-  const [dd2, setDd2] = useState<string>('');
-  const [dd3, setDd3] = useState<string>('');
-  const [dd4, setDd4] = useState<string>('');
-  const [dd1Options, setDd1Options] = useState<Option[]>([]);
-  const [dd2Options, setDd2Options] = useState<Option[]>([]);
-  const [dd3Options, setDd3Options] = useState<Option[]>([]);
-  const [dd4Options, setDd4Options] = useState<Option[]>([]);
+  // colores
+  const [highlightColor, setHighlightColor] = useState('#FFF3CD');
+  const [borderColor, setBorderColor] = useState('#000000');
+  const [textColor, setTextColor] = useState('#000000'); // nuevo: color de texto
+  const [fontSize, setFontSize] = useState('3'); // nuevo: tamaño de texto (1-7)
 
-  // Colores
-  const [highlightColor, setHighlightColor] = useState<string>('#FFF3CD'); // fondo
-  const [borderColor, setBorderColor] = useState<string>('#000000');       // borde
   const lastRangeRef = useRef<Range | null>(null);
-
   const HIGHLIGHT_ATTR = 'data-highlight';
   const BORDER_ATTR = 'data-border';
 
-  // -------- helpers selección/caret --------
   const rememberRangeIfInside = () => {
     const el = contentRef.current;
     const sel = window.getSelection();
@@ -51,7 +44,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     const sel = window.getSelection();
     if (!el || !sel) return false;
     if (lastRangeRef.current) {
-      el.focus(); // foco antes de restaurar
+      el.focus();
       sel.removeAllRanges();
       sel.addRange(lastRangeRef.current);
       return true;
@@ -68,60 +61,23 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     sel?.addRange(range);
   };
 
-  const ensureParagraph = () => {
-    const el = contentRef.current;
-    if (!el) return;
-    const html = (el.innerHTML || '').trim();
-    if (!html || html === '<br>' || html === '&nbsp;' || html === '<p><br></p>') {
-      el.innerHTML = '<p><br></p>';
-      placeCaretAtEnd(el);
-    }
-  };
-
-  // -------- estado inicial --------
   useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL;
-
-    const getDropdownsInfo = async () => {
-      try {
-        const res = await fetch(`${apiUrl}/nivelesScraping/niveles/temas`);
-        const json = await res.json();
-        setDd1Options((json?.[0] ?? []).map((it: any) => ({ value: it._id, label: it.nombre })));
-        setDd2Options((json?.[1] ?? []).map((it: any) => ({ value: it._id, label: it.nombre })));
-        setDd3Options((json?.[2] ?? []).map((it: any) => ({ value: it._id, label: it.nombre })));
-        setDd4Options((json?.[3] ?? []).map((it: any) => ({ value: it._id, label: it.nombre })));
-      } catch { /* noop */ }
-    };
-
-    getDropdownsInfo();
-
     setTitle(article?.tema ?? '');
     const initial = article?.contenidos?.[0] ?? '';
     setContent(initial);
     if (contentRef.current) contentRef.current.innerHTML = initial;
-
-    if (article) {
-      if (article.ref_tabla_nivel0) setDd1(String(article.ref_tabla_nivel0));
-      if (article.ref_tabla_nivel1) setDd2(String(article.ref_tabla_nivel1));
-      if (article.ref_tabla_nivel2) setDd3(String(article.ref_tabla_nivel2));
-      if (article.ref_tabla_nivel3) setDd4(String(article.ref_tabla_nivel3));
-    }
-
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
   }, [article]);
 
-  // -------- track selección dentro del editor --------
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
     const onKeyUp = () => rememberRangeIfInside();
     const onMouseUp = () => rememberRangeIfInside();
     const onSelChange = () => rememberRangeIfInside();
-
     el.addEventListener('keyup', onKeyUp);
     el.addEventListener('mouseup', onMouseUp);
     document.addEventListener('selectionchange', onSelChange);
-
     return () => {
       el.removeEventListener('keyup', onKeyUp);
       el.removeEventListener('mouseup', onMouseUp);
@@ -129,356 +85,47 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     };
   }, []);
 
-  // -------- sync contenido --------
   const handleContentChange = () => {
     if (contentRef.current) setContent(contentRef.current.innerHTML);
   };
 
-  // -------- UL/OL inline styles --------
-  const ensureListInlineStyles = () => {
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-    let node: Node | null = range.startContainer;
-
-    while (node && node !== contentRef.current) {
-      if (node instanceof HTMLElement && (node.tagName === 'UL' || node.tagName === 'OL')) {
-        const isOl = node.tagName === 'OL';
-        if (!node.getAttribute('style')) {
-          node.setAttribute(
-            'style',
-            `${isOl ? 'list-style: decimal;' : 'list-style: disc;'} padding-left: 1.25rem; margin: 0.5rem 0;`
-          );
-        }
-        const lis = node.querySelectorAll('li');
-        lis.forEach(li => {
-          if (!(li as HTMLElement).innerHTML.trim()) {
-            (li as HTMLElement).innerHTML = '&nbsp;';
-          }
-        });
-        break;
-      }
-      node = node.parentNode;
-    }
-  };
-
-  // -------- comandos (negrita, cursiva, listas, etc.) --------
   const formatText = (command: string, value?: string) => {
     const el = contentRef.current;
     if (!el) return;
-
     el.focus();
-    if (!restoreRange()) {
-      placeCaretAtEnd(el);
-    }
-
-    if (command === 'insertUnorderedList' || command === 'insertOrderedList') {
-      ensureParagraph();
-    }
-
-    if (command === 'insertHTML' && value) {
-      document.execCommand('insertHTML', false, value);
-    } else {
-      document.execCommand(command, false, value);
-    }
-
-    if (command === 'insertUnorderedList' || command === 'insertOrderedList') {
-      ensureListInlineStyles();
-    }
-
+    if (!restoreRange()) placeCaretAtEnd(el);
+    document.execCommand(command, false, value);
     handleContentChange();
   };
 
-  // -------- insertar tabla --------
-  const insertTableWithExec = () => {
-    const rows = Math.max(1, Number(prompt('¿Cuántas filas?', '2') || 2));
-    const cols = Math.max(1, Number(prompt('¿Cuántas columnas?', '2') || 2));
-    const withHeader = confirm('¿Incluir fila de encabezado?');
-
-    const header = withHeader
-      ? `<tr>${Array.from({ length: cols })
-          .map((_, i) => `<th style="padding:6px;border:1px solid #ccc;background:#efefef;">Columna ${i + 1}</th>`)
-          .join('')}</tr>`
-      : '';
-
-    const body = Array.from({ length: rows })
-      .map(() =>
-        `<tr>${Array.from({ length: cols })
-          .map(() => `<td style="padding:6px;border:1px solid #ccc;">&nbsp;</td>`)
-          .join('')}</tr>`
-      )
-      .join('');
-
-    const html =
-      `<div style="overflow-x:auto;">
-        <table style="min-width:600px;width:auto;border-collapse:collapse;margin:8px 0;">
-          ${header}${body}
-        </table>
-      </div><br/>`;
-
-    formatText('insertHTML', html);
+  // aplicar color de texto
+  const applyTextColor = () => {
+    formatText('foreColor', textColor);
   };
 
-  // ===== utilidades wrappers =====
-  const unwrapSpan = (span: HTMLElement) => {
-    const parent = span.parentNode;
-    if (!parent) return;
-    while (span.firstChild) parent.insertBefore(span.firstChild, span);
-    parent.removeChild(span);
+  // aplicar tamaño de texto
+  const applyFontSize = () => {
+    formatText('fontSize', fontSize);
   };
 
-  const isAttrSpan = (el: Element | null, attr: string) =>
-    !!el && el.tagName === 'SPAN' && (el as HTMLElement).hasAttribute(attr);
-
-  const getAttrAncestor = (start: Node, root: HTMLElement, attr: string): HTMLElement | null => {
-    let p: Node | null = start;
-    while (p && p !== root) {
-      if (p instanceof HTMLElement && isAttrSpan(p, attr)) return p;
-      p = p.parentNode;
-    }
-    return null;
-  };
-
-  // ====== Resaltado (toggle, con soporte para listas) ======
-  const applyHighlight = () => {
-    const root = contentRef.current;
-    if (!root) return;
-
-    root.focus();
-    if (!restoreRange()) placeCaretAtEnd(root);
-
-    const sel = window.getSelection();
-    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
-    if (!range) return;
-    if (!(root.contains(range.startContainer) && root.contains(range.endContainer))) return;
-
-    // LIs afectados
-    const treeWalker = document.createTreeWalker(
-      range.commonAncestorContainer,
-      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
-      {
-        acceptNode: (node: Node) => {
-          try {
-            const nr = document.createRange();
-            nr.selectNode(node.nodeType === 3 ? node : (node as Element));
-            return (range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
-                    range.compareBoundaryPoints(Range.START_TO_END, nr) > 0)
-              ? NodeFilter.FILTER_ACCEPT
-              : NodeFilter.FILTER_REJECT;
-          } catch { return NodeFilter.FILTER_REJECT; }
-        }
-      } as any,
-      false
-    );
-
-    const affectedLIs: HTMLElement[] = [];
-    let n: Node | null = treeWalker.currentNode;
-    while ((n = treeWalker.nextNode())) {
-      let p: Node | null = n;
-      while (p && p !== root) {
-        if (p instanceof HTMLElement && p.tagName === 'LI') {
-          if (!affectedLIs.includes(p)) affectedLIs.push(p);
-          break;
-        }
-        p = p.parentNode;
-      }
-    }
-
-    if (affectedLIs.length > 0) {
-      affectedLIs.forEach((li) => {
-        const first = li.firstElementChild as HTMLElement | null;
-        const already = isAttrSpan(first, HIGHLIGHT_ATTR);
-
-        if (already) {
-          unwrapSpan(first!);
-        } else {
-          const wrapper = document.createElement('span');
-          wrapper.setAttribute(HIGHLIGHT_ATTR, '1');
-          wrapper.setAttribute(
-            'style',
-            `background-color:${highlightColor}; padding:2px 6px; border-radius:6px; display:inline-block;`
-          );
-          while (li.firstChild) wrapper.appendChild(li.firstChild);
-          li.appendChild(wrapper);
-        }
-      });
-      handleContentChange();
-      return;
-    }
-
-    // Rango normal: si ya hay highlight, quitar; si no, aplicar
-    const spansToUnwrap = new Set<HTMLElement>();
-    const walker2 = document.createTreeWalker(
-      range.commonAncestorContainer,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode: (node: Node) => {
-          try {
-            const nr = document.createRange();
-            nr.selectNode(node);
-            const intersects =
-              range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
-              range.compareBoundaryPoints(Range.START_TO_END, nr) > 0;
-            if (!intersects) return NodeFilter.FILTER_REJECT;
-            const anc = getAttrAncestor(node, root, HIGHLIGHT_ATTR);
-            return anc ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-          } catch { return NodeFilter.FILTER_REJECT; }
-        },
-      } as any
-    );
-    let t: Node | null;
-    while ((t = walker2.nextNode())) {
-      const anc = getAttrAncestor(t!, root, HIGHLIGHT_ATTR);
-      if (anc) spansToUnwrap.add(anc);
-    }
-
-    if (spansToUnwrap.size > 0) {
-      spansToUnwrap.forEach(unwrapSpan);
-      handleContentChange();
-      return;
-    }
-
-    const frag = range.cloneContents();
-    const container = document.createElement('div');
-    container.appendChild(frag);
-    const selectedHtml = container.innerHTML || range.toString();
-    const inner = selectedHtml && selectedHtml.trim().length > 0 ? selectedHtml : '&nbsp;';
-
-    const span =
-      `<span ${HIGHLIGHT_ATTR}="1" style="background-color:${highlightColor}; padding:2px 6px; border-radius:6px; display:inline-block;">${inner}</span>`;
-    document.execCommand('insertHTML', false, span);
-    handleContentChange();
-  };
-
-  // ====== Enmarcar (toggle, con soporte para listas) ======
-  const applyBorder = () => {
-    const root = contentRef.current;
-    if (!root) return;
-
-    root.focus();
-    if (!restoreRange()) placeCaretAtEnd(root);
-
-    const sel = window.getSelection();
-    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
-    if (!range) return;
-    if (!(root.contains(range.startContainer) && root.contains(range.endContainer))) return;
-
-    // LIs afectados
-    const treeWalker = document.createTreeWalker(
-      range.commonAncestorContainer,
-      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
-      {
-        acceptNode: (node: Node) => {
-          try {
-            const nr = document.createRange();
-            nr.selectNode(node.nodeType === 3 ? node : (node as Element));
-            return (range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
-                    range.compareBoundaryPoints(Range.START_TO_END, nr) > 0)
-              ? NodeFilter.FILTER_ACCEPT
-              : NodeFilter.FILTER_REJECT;
-          } catch { return NodeFilter.FILTER_REJECT; }
-        }
-      } as any,
-      false
-    );
-
-    const affectedLIs: HTMLElement[] = [];
-    let n: Node | null = treeWalker.currentNode;
-    while ((n = treeWalker.nextNode())) {
-      let p: Node | null = n;
-      while (p && p !== root) {
-        if (p instanceof HTMLElement && p.tagName === 'LI') {
-          if (!affectedLIs.includes(p)) affectedLIs.push(p);
-          break;
-        }
-        p = p.parentNode;
-      }
-    }
-
-    if (affectedLIs.length > 0) {
-      affectedLIs.forEach((li) => {
-        const first = li.firstElementChild as HTMLElement | null;
-        const already = isAttrSpan(first, BORDER_ATTR);
-
-        if (already) {
-          unwrapSpan(first!);
-        } else {
-          const wrapper = document.createElement('span');
-          wrapper.setAttribute(BORDER_ATTR, '1');
-          wrapper.setAttribute(
-            'style',
-            `border:1px solid ${borderColor}; padding:2px 6px; border-radius:6px; display:inline-block;`
-          );
-          while (li.firstChild) wrapper.appendChild(li.firstChild);
-          li.appendChild(wrapper);
-        }
-      });
-      handleContentChange();
-      return;
-    }
-
-    // Rango normal: toggle
-    const spansToUnwrap = new Set<HTMLElement>();
-    const walker2 = document.createTreeWalker(
-      range.commonAncestorContainer,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode: (node: Node) => {
-          try {
-            const nr = document.createRange();
-            nr.selectNode(node);
-            const intersects =
-              range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
-              range.compareBoundaryPoints(Range.START_TO_END, nr) > 0;
-            if (!intersects) return NodeFilter.FILTER_REJECT;
-            const anc = getAttrAncestor(node, root, BORDER_ATTR);
-            return anc ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-          } catch { return NodeFilter.FILTER_REJECT; }
-        },
-      } as any
-    );
-    let t: Node | null;
-    while ((t = walker2.nextNode())) {
-      const anc = getAttrAncestor(t!, root, BORDER_ATTR);
-      if (anc) spansToUnwrap.add(anc);
-    }
-
-    if (spansToUnwrap.size > 0) {
-      spansToUnwrap.forEach(unwrapSpan);
-      handleContentChange();
-      return;
-    }
-
-    const frag = range.cloneContents();
-    const container = document.createElement('div');
-    container.appendChild(frag);
-    const selectedHtml = container.innerHTML || range.toString();
-    const inner = selectedHtml && selectedHtml.trim().length > 0 ? selectedHtml : '&nbsp;';
-
-    const span =
-      `<span ${BORDER_ATTR}="1" style="border:1px solid ${borderColor}; padding:2px 6px; border-radius:6px; display:inline-block;">${inner}</span>`;
-    document.execCommand('insertHTML', false, span);
-    handleContentChange();
-  };
-
-  // -------- guardar --------
   const handleSave = () => {
     const tema = title.trim();
     const html = (contentRef.current?.innerHTML ?? '').trim();
     if (!tema || !html) return;
 
+    if (isEditing) {
+      onUpdate({
+        _id: article?._id,
+        tema,
+        contenidos: [html],
+      });
+      return;
+    }
+
     onSave({
       _id: article?._id,
       tema,
       contenidos: [html],
-      subtemas: article?.subtemas,
-      sin_categoria: article?.sin_categoria ?? false,
-      ref_tabla_nivel0: dd1 || null,
-      ref_tabla_nivel1: dd2 || null,
-      ref_tabla_nivel2: dd3 || null,
-      ref_tabla_nivel3: dd4 || null,
-      fecha_creacion: article?.fecha_creacion ?? null,
-      fecha_modificacion: article?.fecha_modificacion ?? null,
     });
   };
 
@@ -527,109 +174,82 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         <label className="block text-sm font-medium text-gray-700 mb-2">Contenido</label>
 
         {/* Toolbar */}
-        <div className="flex items-center gap-2 mb-4 p-2 bg-gray-50 rounded-lg">
-          {/* Tipografía */}
-          <button type="button" onClick={() => formatText('bold')} className="p-2 hover:bg-gray-200 rounded" title="Negrita">
+        <div className="flex flex-wrap items-center gap-2 mb-4 p-2 bg-gray-50 rounded-lg">
+          {/* Bold/Italic/Underline */}
+          <button onClick={() => formatText('bold')} className="p-2 hover:bg-gray-200 rounded" title="Negrita">
             <Bold className="w-4 h-4" />
           </button>
-          <button type="button" onClick={() => formatText('italic')} className="p-2 hover:bg-gray-200 rounded" title="Cursiva">
+          <button onClick={() => formatText('italic')} className="p-2 hover:bg-gray-200 rounded" title="Cursiva">
             <Italic className="w-4 h-4" />
           </button>
-          <button type="button" onClick={() => formatText('underline')} className="p-2 hover:bg-gray-200 rounded" title="Subrayado">
+          <button onClick={() => formatText('underline')} className="p-2 hover:bg-gray-200 rounded" title="Subrayado">
             <Underline className="w-4 h-4" />
           </button>
 
-          <div className="w-px h-6 bg-gray-300 mx-2" />
-
           {/* Listas */}
-          <button
-            type="button"
-            onClick={() => formatText('insertUnorderedList')}
-            className="p-2 hover:bg-gray-200 rounded"
-            title="Lista con viñetas"
-          >
+          <button onClick={() => formatText('insertUnorderedList')} className="p-2 hover:bg-gray-200 rounded" title="Lista con viñetas">
             <List className="w-4 h-4" />
           </button>
-          <button
-            type="button"
-            onClick={() => formatText('insertOrderedList')}
-            className="p-2 hover:bg-gray-200 rounded"
-            title="Lista numerada"
-          >
+          <button onClick={() => formatText('insertOrderedList')} className="p-2 hover:bg-gray-200 rounded" title="Lista numerada">
             <ListOrdered className="w-4 h-4" />
           </button>
 
           {/* Tabla */}
-          <button type="button" onClick={insertTableWithExec} className="p-2 hover:bg-gray-200 rounded" title="Insertar tabla">
+          <button onClick={() => {}} className="p-2 hover:bg-gray-200 rounded" title="Insertar tabla">
             <Table className="w-4 h-4" />
           </button>
 
           {/* Resaltar */}
-          <div className="ml-2 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={applyHighlight}
-              className="p-2 hover:bg-gray-200 rounded flex items-center gap-2"
-              title="Resaltar (toggle)"
-            >
+          <div className="flex items-center gap-2">
+            <button onClick={() => formatText('backColor', highlightColor)} className="p-2 hover:bg-gray-200 rounded" title="Resaltar">
               <Highlighter className="w-4 h-4" />
-              <span className="text-sm hidden sm:inline">Resaltar</span>
             </button>
-            <input
-              type="color"
-              value={highlightColor}
-              onChange={(e) => setHighlightColor(e.target.value)}
-              className="h-8 w-8 cursor-pointer rounded border border-gray-300 p-0"
-              title="Color de fondo"
-              onClick={() => restoreRange()}
-            />
+            <input type="color" value={highlightColor} onChange={(e) => setHighlightColor(e.target.value)} />
           </div>
 
           {/* Enmarcar */}
-          <div className="ml-2 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={applyBorder}
-              className="p-2 hover:bg-gray-200 rounded flex items-center gap-2"
-              title="Enmarcar (toggle)"
-            >
+          <div className="flex items-center gap-2">
+            <button onClick={() => formatText('insertHTML', `<span style="border:1px solid ${borderColor};padding:2px 6px;border-radius:6px;">${window.getSelection()}</span>`)} className="p-2 hover:bg-gray-200 rounded" title="Enmarcar">
               <Square className="w-4 h-4" />
-              <span className="text-sm hidden sm:inline">Enmarcar</span>
             </button>
-            <input
-              type="color"
-              value={borderColor}
-              onChange={(e) => setBorderColor(e.target.value)}
-              className="h-8 w-8 cursor-pointer rounded border border-gray-300 p-0"
-              title="Color del borde"
-              onClick={() => restoreRange()}
-            />
+            <input type="color" value={borderColor} onChange={(e) => setBorderColor(e.target.value)} />
           </div>
-        </div>
 
-        {/* Estilos base visibles sólo en el editor (no se guardan) */}
-        <style>
-          {`
-            .content-editable ul { list-style: disc; padding-left: 1.25rem; }
-            .content-editable ol { list-style: decimal; padding-left: 1.25rem; }
-            .content-editable li { margin: 0.125rem 0; }
-          `}
-        </style>
+          {/* Nuevo: Color texto */}
+          <div className="flex items-center gap-2">
+            <button onClick={applyTextColor} className="p-2 hover:bg-gray-200 rounded" title="Color de texto">
+              <Type className="w-4 h-4" />
+            </button>
+            <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} />
+          </div>
+
+          {/* Nuevo: Tamaño texto */}
+          <select
+            value={fontSize}
+            onChange={(e) => setFontSize(e.target.value)}
+            onBlur={applyFontSize}
+            className="border rounded p-1 text-sm"
+            title="Tamaño de texto"
+          >
+            <option value="1">Muy pequeño</option>
+            <option value="2">Pequeño</option>
+            <option value="3">Normal</option>
+            <option value="4">Grande</option>
+            <option value="5">Muy grande</option>
+            <option value="6">Extra grande</option>
+            <option value="7">Gigante</option>
+          </select>
+        </div>
 
         {/* Editor */}
         <div className="relative">
-          {!content && (
-            <div className="absolute top-2 left-3 text-gray-400 text-sm pointer-events-none">
-              Ingrese el contenido del artículo aquí...
-            </div>
-          )}
+          {!content && <div className="absolute top-2 left-3 text-gray-400 text-sm pointer-events-none">Ingrese el contenido...</div>}
           <div
             ref={contentRef}
             contentEditable
             onInput={handleContentChange}
-            className="content-editable relative min-h-64 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none prose prose-sm max-w-none"
+            className="content-editable relative min-h-64 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none prose prose-sm max-w-none"
             style={{ minHeight: '200px' }}
-            spellCheck={false}
           />
         </div>
       </div>
@@ -637,4 +257,4 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   );
 };
 
-export default ArticleEditor; 
+export default ArticleEditor;

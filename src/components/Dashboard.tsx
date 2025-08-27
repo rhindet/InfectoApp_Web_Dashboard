@@ -213,6 +213,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       setArticles((prev) =>
         prev.map((a) => (a._id === data._id ? { ...a, ...data, updatedAt: new Date().toISOString() } as any : a))
       );
+      console.log(data)
       setActiveView('articles');
       setCurrentArticle(null);
       return;
@@ -221,6 +222,45 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     setPendingArticle(data);
     setOpen(true);
   };
+
+  const handleUpdateArticle = async  (data: {
+    _id?: string; tema: string; contenidos: string[];
+    ref_tabla_nivel0?: string | null;
+    ref_tabla_nivel1?: string | null;
+    ref_tabla_nivel2?: string | null;
+    ref_tabla_nivel3?: string | null;
+  }) => {
+      
+    console.log(data)
+ try {
+      const apiUrl = import.meta.env.VITE_API_URL;
+
+      const res = await fetch(`${apiUrl}/nivelesScraping/actualizarArticulo/${data._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${txt}`);
+      }
+
+      const created = await res.json();
+      // refresca listado principal
+      setArticles((prev) => [...prev, created]);
+
+
+      resetToNewArticle();
+      setSuccessOpen(true);
+    } catch (e) {
+      console.error('Error creando artículo:', e);
+      // aquí podrías mostrar un toast de error si lo deseas
+    } finally {
+      setSaving(false);
+    }
+
+  }
 
   // Helper para “limpiar todo” y preparar una nueva captura
   const resetToNewArticle = () => {
@@ -275,6 +315,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     } finally {
       setSaving(false);
     }
+
+
   };
 
   const handleEditArticle = (article: Article) => {
@@ -320,6 +362,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             key={editorKey}                 // fuerza remonte al limpiar
             article={currentArticle || undefined}
             onSave={handleSaveArticle}
+            onUpdate={handleUpdateArticle}
             onCancel={() => setActiveView('articles')}
           />
         );
