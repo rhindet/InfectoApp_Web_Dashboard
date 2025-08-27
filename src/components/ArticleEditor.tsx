@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Bold, Italic, Underline, List, ListOrdered, Save, X, Table, PlusCircle, Highlighter
+  Bold, Italic, Underline, List, ListOrdered, Save, X, Table, PlusCircle, Highlighter, Square
 } from 'lucide-react';
 import { Article } from '../types';
 
@@ -27,11 +27,13 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   const [dd3Options, setDd3Options] = useState<Option[]>([]);
   const [dd4Options, setDd4Options] = useState<Option[]>([]);
 
-  // Resaltado
-  const [highlightColor, setHighlightColor] = useState<string>('#FFF3CD'); // amarillo suave
+  // Colores
+  const [highlightColor, setHighlightColor] = useState<string>('#FFF3CD'); // fondo
+  const [borderColor, setBorderColor] = useState<string>('#000000');       // borde
   const lastRangeRef = useRef<Range | null>(null);
 
   const HIGHLIGHT_ATTR = 'data-highlight';
+  const BORDER_ATTR = 'data-border';
 
   // -------- helpers selección/caret --------
   const rememberRangeIfInside = () => {
@@ -105,7 +107,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       if (article.ref_tabla_nivel3) setDd4(String(article.ref_tabla_nivel3));
     }
 
-    // Párrafos por defecto para execCommand
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
   }, [article]);
 
@@ -218,19 +219,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     formatText('insertHTML', html);
   };
 
-  // ===== helpers resaltado (toggle) =====
-  const isHighlightSpan = (el: Element | null) =>
-    !!el && el.tagName === 'SPAN' && (el as HTMLElement).hasAttribute(HIGHLIGHT_ATTR);
-
-  const getHighlightAncestor = (start: Node, root: HTMLElement): HTMLElement | null => {
-    let p: Node | null = start;
-    while (p && p !== root) {
-      if (p instanceof HTMLElement && isHighlightSpan(p)) return p;
-      p = p.parentNode;
-    }
-    return null;
-  };
-
+  // ===== utilidades wrappers =====
   const unwrapSpan = (span: HTMLElement) => {
     const parent = span.parentNode;
     if (!parent) return;
@@ -238,37 +227,45 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     parent.removeChild(span);
   };
 
-  // ====== Resaltado con TOGGLE ======
+  const isAttrSpan = (el: Element | null, attr: string) =>
+    !!el && el.tagName === 'SPAN' && (el as HTMLElement).hasAttribute(attr);
+
+  const getAttrAncestor = (start: Node, root: HTMLElement, attr: string): HTMLElement | null => {
+    let p: Node | null = start;
+    while (p && p !== root) {
+      if (p instanceof HTMLElement && isAttrSpan(p, attr)) return p;
+      p = p.parentNode;
+    }
+    return null;
+  };
+
+  // ====== Resaltado (toggle, con soporte para listas) ======
   const applyHighlight = () => {
     const root = contentRef.current;
     if (!root) return;
 
     root.focus();
-    if (!restoreRange()) {
-      placeCaretAtEnd(root);
-    }
+    if (!restoreRange()) placeCaretAtEnd(root);
 
     const sel = window.getSelection();
     const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
     if (!range) return;
     if (!(root.contains(range.startContainer) && root.contains(range.endContainer))) return;
 
-    // 1) Detectar si la selección toca LI(s)
+    // LIs afectados
     const treeWalker = document.createTreeWalker(
       range.commonAncestorContainer,
       NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
       {
         acceptNode: (node: Node) => {
           try {
-            const nodeRange = document.createRange();
-            nodeRange.selectNode(node.nodeType === 3 ? node : (node as Element));
-            return (range.compareBoundaryPoints(Range.END_TO_START, nodeRange) < 0 &&
-                    range.compareBoundaryPoints(Range.START_TO_END, nodeRange) > 0)
+            const nr = document.createRange();
+            nr.selectNode(node.nodeType === 3 ? node : (node as Element));
+            return (range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
+                    range.compareBoundaryPoints(Range.START_TO_END, nr) > 0)
               ? NodeFilter.FILTER_ACCEPT
               : NodeFilter.FILTER_REJECT;
-          } catch {
-            return NodeFilter.FILTER_REJECT;
-          }
+          } catch { return NodeFilter.FILTER_REJECT; }
         }
       } as any,
       false
@@ -287,18 +284,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       }
     }
 
-    // 2) Si hay LIs => toggle por LI (no envolver <li>)
     if (affectedLIs.length > 0) {
       affectedLIs.forEach((li) => {
-        // ¿ya está resaltado el contenido?
         const first = li.firstElementChild as HTMLElement | null;
-        const already = isHighlightSpan(first);
+        const already = isAttrSpan(first, HIGHLIGHT_ATTR);
 
         if (already) {
-          // quitar resaltado: unwrap
           unwrapSpan(first!);
         } else {
-          // aplicar resaltado: mover hijos dentro de wrapper
           const wrapper = document.createElement('span');
           wrapper.setAttribute(HIGHLIGHT_ATTR, '1');
           wrapper.setAttribute(
@@ -309,13 +302,11 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           li.appendChild(wrapper);
         }
       });
-
       handleContentChange();
       return;
     }
 
-    // 3) Selección normal => toggle por rango
-    // 3a) Si todo (o parte) del rango ya está dentro de span de highlight, lo quitamos
+    // Rango normal: si ya hay highlight, quitar; si no, aplicar
     const spansToUnwrap = new Set<HTMLElement>();
     const walker2 = document.createTreeWalker(
       range.commonAncestorContainer,
@@ -329,29 +320,24 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
               range.compareBoundaryPoints(Range.START_TO_END, nr) > 0;
             if (!intersects) return NodeFilter.FILTER_REJECT;
-            const anc = getHighlightAncestor(node, root);
+            const anc = getAttrAncestor(node, root, HIGHLIGHT_ATTR);
             return anc ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-          } catch {
-            return NodeFilter.FILTER_REJECT;
-          }
+          } catch { return NodeFilter.FILTER_REJECT; }
         },
       } as any
     );
-
     let t: Node | null;
     while ((t = walker2.nextNode())) {
-      const anc = getHighlightAncestor(t!, root);
+      const anc = getAttrAncestor(t!, root, HIGHLIGHT_ATTR);
       if (anc) spansToUnwrap.add(anc);
     }
 
     if (spansToUnwrap.size > 0) {
-      // quitar resaltado de todos los spans encontrados
       spansToUnwrap.forEach(unwrapSpan);
       handleContentChange();
       return;
     }
 
-    // 3b) No hay highlight en la selección => aplicarlo
     const frag = range.cloneContents();
     const container = document.createElement('div');
     container.appendChild(frag);
@@ -360,7 +346,117 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
     const span =
       `<span ${HIGHLIGHT_ATTR}="1" style="background-color:${highlightColor}; padding:2px 6px; border-radius:6px; display:inline-block;">${inner}</span>`;
+    document.execCommand('insertHTML', false, span);
+    handleContentChange();
+  };
 
+  // ====== Enmarcar (toggle, con soporte para listas) ======
+  const applyBorder = () => {
+    const root = contentRef.current;
+    if (!root) return;
+
+    root.focus();
+    if (!restoreRange()) placeCaretAtEnd(root);
+
+    const sel = window.getSelection();
+    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+    if (!range) return;
+    if (!(root.contains(range.startContainer) && root.contains(range.endContainer))) return;
+
+    // LIs afectados
+    const treeWalker = document.createTreeWalker(
+      range.commonAncestorContainer,
+      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node: Node) => {
+          try {
+            const nr = document.createRange();
+            nr.selectNode(node.nodeType === 3 ? node : (node as Element));
+            return (range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
+                    range.compareBoundaryPoints(Range.START_TO_END, nr) > 0)
+              ? NodeFilter.FILTER_ACCEPT
+              : NodeFilter.FILTER_REJECT;
+          } catch { return NodeFilter.FILTER_REJECT; }
+        }
+      } as any,
+      false
+    );
+
+    const affectedLIs: HTMLElement[] = [];
+    let n: Node | null = treeWalker.currentNode;
+    while ((n = treeWalker.nextNode())) {
+      let p: Node | null = n;
+      while (p && p !== root) {
+        if (p instanceof HTMLElement && p.tagName === 'LI') {
+          if (!affectedLIs.includes(p)) affectedLIs.push(p);
+          break;
+        }
+        p = p.parentNode;
+      }
+    }
+
+    if (affectedLIs.length > 0) {
+      affectedLIs.forEach((li) => {
+        const first = li.firstElementChild as HTMLElement | null;
+        const already = isAttrSpan(first, BORDER_ATTR);
+
+        if (already) {
+          unwrapSpan(first!);
+        } else {
+          const wrapper = document.createElement('span');
+          wrapper.setAttribute(BORDER_ATTR, '1');
+          wrapper.setAttribute(
+            'style',
+            `border:1px solid ${borderColor}; padding:2px 6px; border-radius:6px; display:inline-block;`
+          );
+          while (li.firstChild) wrapper.appendChild(li.firstChild);
+          li.appendChild(wrapper);
+        }
+      });
+      handleContentChange();
+      return;
+    }
+
+    // Rango normal: toggle
+    const spansToUnwrap = new Set<HTMLElement>();
+    const walker2 = document.createTreeWalker(
+      range.commonAncestorContainer,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node: Node) => {
+          try {
+            const nr = document.createRange();
+            nr.selectNode(node);
+            const intersects =
+              range.compareBoundaryPoints(Range.END_TO_START, nr) < 0 &&
+              range.compareBoundaryPoints(Range.START_TO_END, nr) > 0;
+            if (!intersects) return NodeFilter.FILTER_REJECT;
+            const anc = getAttrAncestor(node, root, BORDER_ATTR);
+            return anc ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+          } catch { return NodeFilter.FILTER_REJECT; }
+        },
+      } as any
+    );
+    let t: Node | null;
+    while ((t = walker2.nextNode())) {
+      const anc = getAttrAncestor(t!, root, BORDER_ATTR);
+      if (anc) spansToUnwrap.add(anc);
+    }
+
+    if (spansToUnwrap.size > 0) {
+      spansToUnwrap.forEach(unwrapSpan);
+      handleContentChange();
+      return;
+    }
+
+    const frag = range.cloneContents();
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    const selectedHtml = container.innerHTML || range.toString();
+    const inner = selectedHtml && selectedHtml.trim().length > 0 ? selectedHtml : '&nbsp;';
+
+    const span =
+      `<span ${BORDER_ATTR}="1" style="border:1px solid ${borderColor}; padding:2px 6px; border-radius:6px; display:inline-block;">${inner}</span>`;
     document.execCommand('insertHTML', false, span);
     handleContentChange();
   };
@@ -432,6 +528,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
         {/* Toolbar */}
         <div className="flex items-center gap-2 mb-4 p-2 bg-gray-50 rounded-lg">
+          {/* Tipografía */}
           <button type="button" onClick={() => formatText('bold')} className="p-2 hover:bg-gray-200 rounded" title="Negrita">
             <Bold className="w-4 h-4" />
           </button>
@@ -444,6 +541,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
           <div className="w-px h-6 bg-gray-300 mx-2" />
 
+          {/* Listas */}
           <button
             type="button"
             onClick={() => formatText('insertUnorderedList')}
@@ -452,7 +550,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           >
             <List className="w-4 h-4" />
           </button>
-
           <button
             type="button"
             onClick={() => formatText('insertOrderedList')}
@@ -462,11 +559,12 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             <ListOrdered className="w-4 h-4" />
           </button>
 
+          {/* Tabla */}
           <button type="button" onClick={insertTableWithExec} className="p-2 hover:bg-gray-200 rounded" title="Insertar tabla">
             <Table className="w-4 h-4" />
           </button>
 
-          {/* Resaltado */}
+          {/* Resaltar */}
           <div className="ml-2 flex items-center gap-2">
             <button
               type="button"
@@ -482,7 +580,28 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               value={highlightColor}
               onChange={(e) => setHighlightColor(e.target.value)}
               className="h-8 w-8 cursor-pointer rounded border border-gray-300 p-0"
-              title="Elegir color de fondo"
+              title="Color de fondo"
+              onClick={() => restoreRange()}
+            />
+          </div>
+
+          {/* Enmarcar */}
+          <div className="ml-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={applyBorder}
+              className="p-2 hover:bg-gray-200 rounded flex items-center gap-2"
+              title="Enmarcar (toggle)"
+            >
+              <Square className="w-4 h-4" />
+              <span className="text-sm hidden sm:inline">Enmarcar</span>
+            </button>
+            <input
+              type="color"
+              value={borderColor}
+              onChange={(e) => setBorderColor(e.target.value)}
+              className="h-8 w-8 cursor-pointer rounded border border-gray-300 p-0"
+              title="Color del borde"
               onClick={() => restoreRange()}
             />
           </div>
