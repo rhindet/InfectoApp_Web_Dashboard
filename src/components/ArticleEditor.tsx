@@ -59,7 +59,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     sel?.addRange(range);
   };
 
-  // ---------- Normalización: forzar <p> en top-level ----------
+  // ---------- Normalización: forzar <p> en top-level (sin borrar espacios) ----------
   const normalizeTopLevelToParagraphs = () => {
     const root = contentRef.current;
     if (!root) return;
@@ -76,16 +76,13 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       const next = node.nextSibling;
 
       if (node.nodeType === Node.TEXT_NODE) {
-        const txt = node.textContent ?? '';
-        if (txt.trim() === '') {
-          root.removeChild(node);
-        } else {
-          if (!currentP) {
-            currentP = document.createElement('p');
-            root.insertBefore(currentP, node);
-          }
-          currentP.appendChild(node);
+        // NO borramos textos de solo espacios: siempre los llevamos a un <p>
+        const txtNode = node as Text;
+        if (!currentP) {
+          currentP = document.createElement('p');
+          root.insertBefore(currentP, txtNode);
         }
+        currentP.appendChild(txtNode);
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as HTMLElement;
         const tag = el.tagName;
@@ -97,6 +94,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           }
           currentP.appendChild(el);
         } else if (['DIV','H1','H2','H3','H4','H5','H6'].includes(tag)) {
+          // convertir a <p>
           const p = document.createElement('p');
           while (el.firstChild) p.appendChild(el.firstChild);
           root.replaceChild(p, el);
@@ -104,6 +102,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         } else if (isBlockKeep(el)) {
           currentP = null;
         } else {
+          // inline u otros en top-level -> envolver en <p>
           if (!currentP) {
             currentP = document.createElement('p');
             root.insertBefore(currentP, el);
@@ -115,11 +114,12 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       node = next;
     }
 
-    root.querySelectorAll('p').forEach(p => {
-      const onlyWhitespace = !(p.textContent ?? '').trim();
-      const noChildren = p.children.length === 0;
-      if (onlyWhitespace && noChildren) p.innerHTML = '<br>';
-    });
+    // Si quedó vacío, deja un párrafo para poder enfocar
+    if (root.childElementCount === 0) {
+      const p = document.createElement('p');
+      p.innerHTML = '<br>';
+      root.appendChild(p);
+    }
 
     restoreRange();
   };
@@ -130,7 +130,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     const initial = article?.contenidos?.[0] ?? '';
     setContent(initial);
     if (contentRef.current) {
-      contentRef.current.innerHTML = initial;
+      contentRef.current.innerHTML = initial || '<p><br></p>';
       normalizeTopLevelToParagraphs();
     }
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
@@ -205,9 +205,9 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
     while (node && node !== contentRef.current) {
       if (node instanceof HTMLElement && node.tagName === 'P') {
-        node.style.marginLeft = '0';
-        node.style.paddingLeft = '0';
-        node.style.textIndent = '0';
+        (node as HTMLElement).style.marginLeft = '0';
+        (node as HTMLElement).style.paddingLeft = '0';
+        (node as HTMLElement).style.textIndent = '0';
         break;
       }
       node = node.parentNode as Node | null;
@@ -233,7 +233,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     return t;
   }
 
-  // === Saneador que CONSERVA bold/italic/underline y font-size (y ahora IMG) ===
+  // === (quedan helpers por si luego los quieres) ===
   const ALLOWED_TAGS = new Set([
     'P','BR','B','STRONG','I','EM','U','SPAN',
     'H1','H2','H3','H4','H5','H6',
@@ -269,7 +269,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       if (!propRaw || valueParts.length === 0) continue;
       const prop = propRaw.trim().toLowerCase();
       const val = valueParts.join(':').trim();
-
       if (prop.startsWith('--tw-')) continue;
       if (ALLOWED_STYLES.has(prop)) {
         kept.push(`${prop}: ${val}`);
@@ -278,155 +277,42 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     return kept.join('; ');
   }
 
-  function sanitizeClipboardHtml(html: string): string {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(`<div id="__root">${html}</div>`, 'text/html');
-    const root = doc.getElementById('__root') as HTMLElement;
-    if (!root) return html;
-
-    doc.querySelectorAll('meta, title, style, script, link').forEach(n => n.remove());
-
-    const walker = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null);
-    const toUnwrap: Element[] = [];
-    const toRemove: Element[] = [];
-
-    while (walker.nextNode()) {
-      const el = walker.currentNode as HTMLElement;
-
-      if (el.className && /(^|\s)Mso[\w-]*/i.test(el.className)) {
-        el.removeAttribute('class');
-      }
-
-      if (!ALLOWED_TAGS.has(el.tagName)) {
-        if (el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE' && el.tagName !== 'LINK') {
-          toUnwrap.push(el);
-        } else {
-          toRemove.push(el);
-        }
-        continue;
-      }
-
-      [...el.attributes].forEach(attr => {
-        const name = attr.name.toLowerCase();
-
-        if (name === 'style') {
-          const kept = keepOnlyAllowedStyles(attr.value);
-          if (kept) el.setAttribute('style', kept);
-          else el.removeAttribute('style');
-          return;
-        }
-
-        if (el.tagName === 'A') {
-          if (!ALLOWED_ATTRS['A'].has(attr.name)) {
-            el.removeAttribute(attr.name);
-          } else if (attr.name === 'href') {
-            const v = attr.value.trim();
-            if (/^javascript:/i.test(v)) el.removeAttribute('href');
-          }
-          return;
-        }
-
-        if ((el.tagName === 'TH' || el.tagName === 'TD')) {
-          if (!ALLOWED_ATTRS[el.tagName]?.has(attr.name)) {
-            el.removeAttribute(attr.name);
-          }
-          return;
-        }
-
-        if (el.tagName === 'IMG') {
-          if (!ALLOWED_ATTRS['IMG'].has(attr.name)) {
-            el.removeAttribute(attr.name);
-          } else if (attr.name === 'src') {
-            const v = attr.value.trim();
-            if (/^javascript:/i.test(v)) el.removeAttribute('src');
-          }
-          return;
-        }
-
-        el.removeAttribute(attr.name);
-      });
-    }
-
-    toRemove.forEach(n => n.remove());
-    toUnwrap.forEach(el => {
-      const frag = doc.createDocumentFragment();
-      while (el.firstChild) frag.appendChild(el.firstChild);
-      el.replaceWith(frag);
-    });
-
-    root.querySelectorAll('p').forEach(p => {
-      const htmlP = p.innerHTML
-        .replace(/&nbsp;/gi, '')
-        .replace(/\s+/g, '')
-        .replace(/<br\s*\/?>/gi, '');
-      if (!htmlP) p.remove();
-    });
-
-    return root.innerHTML;
-  }
-
-  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-  // PASTE FIX: priorizamos HTML, luego texto, y files al final.
+  // ---------- PASTE: SOLO TEXTO PLANO ----------
   const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault();
 
-    const dt = e.clipboardData;
+    // Siempre pegamos texto plano; ignoramos HTML e imágenes del portapapeles
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    const el = contentRef.current;
+    if (!el) return;
 
-    // 1) Si viene HTML (Word/Docs), úsalo primero
-    const htmlClip = dt.getData('text/html');
-    if (htmlClip && htmlClip.trim()) {
-      const safe = sanitizeClipboardHtml(htmlClip);
-      document.execCommand('insertHTML', false, safe);
+    el.focus();
+    if (!restoreRange()) placeCaretAtEnd(el);
+
+    if (text) {
+      // Inserta texto tal cual (sin etiquetas)
+      document.execCommand('insertText', false, text);
       normalizeTopLevelToParagraphs();
       handleContentChange();
-      return;
     }
-
-    // 2) Si no hay HTML, intenta texto plano
-    const text = dt.getData('text/plain');
-    if (text && text.trim()) {
-      const html = textToHtmlPreserveWhitespace(text);
-      document.execCommand('insertHTML', false, html);
-      normalizeTopLevelToParagraphs();
-      handleContentChange();
-      return;
-    }
-
-    // 3) Si no hay HTML ni texto, revisa archivos (imágenes del portapapeles)
-    const files = dt?.files;
-    if (files && files.length) {
-      for (const f of Array.from(files)) {
-        if (f.type.startsWith('image/')) {
-          await handleImageFile(f);
-        }
-      }
-      return;
-    }
+    // Si no hay texto, no hacemos nada (no pegamos imágenes ni HTML)
   };
-  // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
+  // ---------- DROP ----------
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
 
-    // Archivos arrastrados
-    if (e.dataTransfer?.files?.length) {
-      for (const f of Array.from(e.dataTransfer.files)) {
-        if (f.type.startsWith('image/')) await handleImageFile(f);
-      }
-      return;
-    }
-
-    // Texto/URL arrastrado
+    // Solo aceptamos texto arrastrado; ignoramos archivos/imágenes
     const text = e.dataTransfer.getData('text/plain') || '';
-    if (/^https?:\/\/.+\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(text)) {
-      insertImageAtSelection(text);
-      return;
+    if (text) {
+      const el = contentRef.current;
+      if (!el) return;
+      el.focus();
+      if (!restoreRange()) placeCaretAtEnd(el);
+      document.execCommand('insertText', false, text);
+      normalizeTopLevelToParagraphs();
+      handleContentChange();
     }
-
-    const html = textToHtmlPreserveWhitespace(text);
-    document.execCommand('insertHTML', false, html);
-    normalizeTopLevelToParagraphs();
-    handleContentChange();
   };
 
   // ---------- Sanitizador antes de guardar ----------
@@ -478,8 +364,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     root.querySelectorAll('img[src]').forEach((img: Element) => {
       const src = (img as HTMLImageElement).getAttribute('src') || '';
       if (/^javascript:/i.test(src)) (img as HTMLElement).remove();
-      // Si no quieres permitir data: en persistencia final, descomenta:
-      // if (/^data:/i.test(src)) (img as HTMLElement).remove();
     });
 
     root.innerHTML = root.innerHTML
@@ -688,15 +572,15 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     forEachElementInRange(range, el, (node) => {
       const bg = getComputedStyle(node).backgroundColor;
       if (bg && toRgbString(bg) === targetRgb) {
-        const style = node.getAttribute('style') || '';
+        const style = (node as HTMLElement).getAttribute('style') || '';
         if (style.includes('background-color')) {
           const cleaned = style
             .split(';')
             .map(s => s.trim())
             .filter(s => s && !/^background-color\s*:/i.test(s))
             .join('; ');
-          if (cleaned) node.setAttribute('style', cleaned);
-          else node.removeAttribute('style');
+          if (cleaned) (node as HTMLElement).setAttribute('style', cleaned);
+          else (node as HTMLElement).removeAttribute('style');
         }
       }
     });
@@ -728,7 +612,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
   const handleImageFile = async (file: File) => {
     if (!file.type.startsWith('image/')) return;
-    // Reemplaza por upload a tu backend si lo prefieres:
     const dataUrl = await readFileAsDataURL(file);
     insertImageAtSelection(dataUrl, file.name);
   };
@@ -1002,4 +885,4 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   );
 };
 
-export default ArticleEditor;
+export default ArticleEditor; 
