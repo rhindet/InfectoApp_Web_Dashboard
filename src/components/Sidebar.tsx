@@ -2,8 +2,8 @@ import React from 'react';
 import { FileText, Plus } from 'lucide-react';
 
 interface SidebarProps {
-  activeView: 'articles' | 'add';
-  onViewChange: (view: 'articles' | 'add') => void;
+  activeView: 'articles' | 'add' | 'addTopic';   // 👈 añadimos 'addTopic'
+  onViewChange: (view: 'articles' | 'add' | 'addTopic') => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
@@ -43,9 +43,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
           <Plus className="w-5 h-5 mr-3" />
           Añadir
         </button>
+
+        <button
+          onClick={() => onViewChange('addTopic')}   // 👈 nuevo valor
+          className={`w-full flex items-center px-6 py-3 text-left hover:bg-blue-700 transition-colors ${
+            activeView === 'addTopic' ? 'bg-blue-700 border-r-4 border-white' : ''
+          }`}
+        >
+          <Plus className="w-5 h-5 mr-3" />
+          Añadir temas
+        </button>
       </nav>
     </div>
   );
 };
 
-export default Sidebar;
+export default Sidebar; 

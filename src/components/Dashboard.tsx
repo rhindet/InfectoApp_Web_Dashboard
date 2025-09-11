@@ -6,6 +6,7 @@ import ArticleEditor from './ArticleEditor';
 import ArticleView from './ArticleView';
 import { Article, User } from '../types';
 import { DriveNode, ModalMoveDialog } from './ModalArchives';
+import ThemeCreator from './ThemeCreator';
 
 // Tipo para las opciones de temas
 type Option = { value: string; label: string };
@@ -72,8 +73,8 @@ const SuccessModal: React.FC<{
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
-  const [activeView, setActiveView] = useState<'articles' | 'add' | 'edit' | 'view'>('articles');
-  const [loading, setLoading] = useState(true);
+const [activeView, setActiveView] =
+  useState<'articles' | 'add' | 'edit' | 'view' | 'addTopic'>('articles');  const [loading, setLoading] = useState(true);
   const [articles, setArticles] = useState<Article[]>([]);
   const [currentArticle, setCurrentArticle] = useState<Article | null>(null);
 
@@ -290,6 +291,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     } as any;
 
     try {
+
       const res = await fetch(`${apiUrl}/nivelesScraping/crearArticulo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -330,13 +332,40 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   };
 
   //TODO Hacer funcionalidad de eliminar
-  const handleDeleteArticle = (id: string) => {
-        console.log("id")
-        console.log(id)
+  const handleDeleteArticle = async (id: string) => {
+        
+    const apiUrl = import.meta.env.VITE_API_URL;
 
     if (window.confirm('¿Eliminar este artículo?')) {
       setArticles((prev) => prev.filter((a) => a._id !== id));
     }
+
+     try {
+
+      const res = await fetch(`${apiUrl}/articles/delete/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${txt}`);
+      }
+
+      const created = await res.json();
+      // refresca listado principal
+      setArticles((prev) => [...prev, created]);
+
+      // ✅ cerrar modal mover, limpiar y mostrar éxito
+      setOpen(false);
+      //resetToNewArticle();
+      setSuccessOpen(true);
+    } catch (e) {
+      console.error('Error eliminando artículo:', e);
+      // aquí podrías mostrar un toast de error si lo deseas
+    } 
+
+
   };
 
   const handleAddArticle = () => {
@@ -344,50 +373,75 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   };
 
   const renderContent = () => {
-    switch (activeView) {
-      case 'articles':
-        return (
-          <ArticleList
-            articles={articles}
-            onEdit={handleEditArticle}
-            onDelete={handleDeleteArticle}
-            onView={handleViewArticle}
-            onAdd={handleAddArticle}
-          />
-        );
-      case 'add':
-      case 'edit':
-        return (
-          <ArticleEditor
-            key={editorKey}                 // fuerza remonte al limpiar
-            article={currentArticle || undefined}
-            onSave={handleSaveArticle}
-            onUpdate={handleUpdateArticle}
-            onCancel={() => setActiveView('articles')}
-          />
-        );
-      case 'view':
-        return currentArticle ? (
-          <ArticleView
-            article={currentArticle}
-            onBack={() => setActiveView('articles')}
-            onEdit={handleEditArticle}
-          />
-        ) : null;
-      default:
-        return null;
-    }
-  };
+  switch (activeView) {
+    case 'articles':
+      return (
+        <ArticleList
+          articles={articles}
+          onEdit={handleEditArticle}
+          onDelete={handleDeleteArticle}
+          onView={handleViewArticle}
+          onAdd={handleAddArticle}
+        />
+      );
+    case 'add':
+    case 'edit':
+      return (
+        <ArticleEditor
+          key={editorKey}
+          article={currentArticle || undefined}
+          onSave={handleSaveArticle}
+          onUpdate={handleUpdateArticle}
+          onCancel={() => setActiveView('articles')}
+        />
+      );
+    case 'view':
+      return currentArticle ? (
+        <ArticleView
+          article={currentArticle}
+          onBack={() => setActiveView('articles')}
+          onEdit={handleEditArticle}
+        />
+      ) : null;
+
+    // 3) NUEVO: vista para añadir temas
+    case 'addTopic':
+      return (
+      <ThemeCreator
+          key={editorKey}
+          article={currentArticle || undefined}
+          onSave={handleSaveArticle}
+          onUpdate={handleUpdateArticle}
+          onCancel={() => setActiveView('articles')}
+        />)
+
+    default:
+      return null;
+  }
+};
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar
-        activeView={activeView === 'add' || activeView === 'edit' ? 'add' : 'articles'}
-        onViewChange={(view) => {
-          if (view === 'add') handleAddArticle();
-          else setActiveView('articles');
-        }}
-      />
+     <Sidebar
+  activeView={
+    activeView === 'add' || activeView === 'edit'
+      ? 'add'
+      : activeView === 'addTopic'
+      ? 'addTopic'
+      : 'articles'
+  }
+  onViewChange={(view) => {
+    if (view === 'add') {
+      handleAddArticle();      // tu lógica de nuevo artículo
+      setActiveView('add');
+    } else if (view === 'addTopic') {
+      // 👇 aquí decides qué hacer: mostrar formulario de nuevo tema, etc.
+      setActiveView('addTopic');
+    } else if (view === 'articles') {
+      setActiveView('articles');
+    }
+  }}
+/>
 
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
