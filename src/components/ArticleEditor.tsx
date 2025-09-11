@@ -365,32 +365,45 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     return root.innerHTML;
   }
 
+  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+  // PASTE FIX: priorizamos HTML, luego texto, y files al final.
   const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
-    // Si viene imagen en el portapapeles, insértala
-    const files = e.clipboardData?.files;
-    if (files && files.length) {
-      e.preventDefault();
-      for (const f of Array.from(files)) {
-        if (f.type.startsWith('image/')) await handleImageFile(f);
-      }
-      return;
-    }
-
     e.preventDefault();
-    const htmlClip = e.clipboardData.getData('text/html');
-    if (htmlClip) {
+
+    const dt = e.clipboardData;
+
+    // 1) Si viene HTML (Word/Docs), úsalo primero
+    const htmlClip = dt.getData('text/html');
+    if (htmlClip && htmlClip.trim()) {
       const safe = sanitizeClipboardHtml(htmlClip);
       document.execCommand('insertHTML', false, safe);
       normalizeTopLevelToParagraphs();
       handleContentChange();
       return;
     }
-    const text = e.clipboardData.getData('text/plain') || '';
-    const html = textToHtmlPreserveWhitespace(text);
-    document.execCommand('insertHTML', false, html);
-    normalizeTopLevelToParagraphs();
-    handleContentChange();
+
+    // 2) Si no hay HTML, intenta texto plano
+    const text = dt.getData('text/plain');
+    if (text && text.trim()) {
+      const html = textToHtmlPreserveWhitespace(text);
+      document.execCommand('insertHTML', false, html);
+      normalizeTopLevelToParagraphs();
+      handleContentChange();
+      return;
+    }
+
+    // 3) Si no hay HTML ni texto, revisa archivos (imágenes del portapapeles)
+    const files = dt?.files;
+    if (files && files.length) {
+      for (const f of Array.from(files)) {
+        if (f.type.startsWith('image/')) {
+          await handleImageFile(f);
+        }
+      }
+      return;
+    }
   };
+  // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
