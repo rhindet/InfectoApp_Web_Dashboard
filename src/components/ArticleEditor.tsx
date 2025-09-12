@@ -17,16 +17,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   const [content, setContent] = useState<string>(article?.contenidos?.[0] ?? '');
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // colores / tipografía (toolbar)
   const [highlightColor, setHighlightColor] = useState('#FFF3CD');
   const [borderColor, setBorderColor] = useState('#000000');
   const [textColor, setTextColor] = useState('#000000');
-  const [fontSize, setFontSize] = useState('3'); // 1..7 (execCommand)
+  const [fontSize, setFontSize] = useState('3');
 
   const lastRangeRef = useRef<Range | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ---------- selección ----------
   const rememberRangeIfInside = () => {
     const el = contentRef.current;
     const sel = window.getSelection();
@@ -59,7 +57,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     sel?.addRange(range);
   };
 
-  // ---------- Normalización: forzar <p> en top-level (sin borrar espacios) ----------
   const normalizeTopLevelToParagraphs = () => {
     const root = contentRef.current;
     if (!root) return;
@@ -76,7 +73,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       const next = node.nextSibling;
 
       if (node.nodeType === Node.TEXT_NODE) {
-        // NO borramos textos de solo espacios: siempre los llevamos a un <p>
         const txtNode = node as Text;
         if (!currentP) {
           currentP = document.createElement('p');
@@ -94,7 +90,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           }
           currentP.appendChild(el);
         } else if (['DIV','H1','H2','H3','H4','H5','H6'].includes(tag)) {
-          // convertir a <p>
           const p = document.createElement('p');
           while (el.firstChild) p.appendChild(el.firstChild);
           root.replaceChild(p, el);
@@ -102,7 +97,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         } else if (isBlockKeep(el)) {
           currentP = null;
         } else {
-          // inline u otros en top-level -> envolver en <p>
           if (!currentP) {
             currentP = document.createElement('p');
             root.insertBefore(currentP, el);
@@ -114,7 +108,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       node = next;
     }
 
-    // Si quedó vacío, deja un párrafo para poder enfocar
     if (root.childElementCount === 0) {
       const p = document.createElement('p');
       p.innerHTML = '<br>';
@@ -124,7 +117,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     restoreRange();
   };
 
-  // ---------- ciclo de vida ----------
   useEffect(() => {
     setTitle(article?.tema ?? '');
     const initial = article?.contenidos?.[0] ?? '';
@@ -152,7 +144,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     };
   }, []);
 
-  // ---------- helpers UI ----------
   const handleContentChange = () => {
     normalizeTopLevelToParagraphs();
     if (contentRef.current) setContent(contentRef.current.innerHTML);
@@ -214,7 +205,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
   };
 
-  // ---------- PEGADO/ARRASTRE ----------
   function escapeHtml(s: string) {
     return s
       .replace(/&/g, '&amp;')
@@ -223,86 +213,24 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
   }
-  function textToHtmlPreserveWhitespace(text: string) {
-    if (!text) return '';
-    let t = text.replace(/\r\n?/g, '\n');
-    t = t.replace(/\t/g, '    ');
-    t = escapeHtml(t);
-    t = t.replace(/ {2,}/g, (m) => '&nbsp;'.repeat(m.length - 1) + ' ');
-    t = t.replace(/\n/g, '<br>');
-    return t;
-  }
 
-  // === (quedan helpers por si luego los quieres) ===
-  const ALLOWED_TAGS = new Set([
-    'P','BR','B','STRONG','I','EM','U','SPAN',
-    'H1','H2','H3','H4','H5','H6',
-    'UL','OL','LI',
-    'A',
-    'TABLE','THEAD','TBODY','TFOOT','TR','TH','TD',
-    'IMG'
-  ]);
-
-  const ALLOWED_ATTRS: Record<string, Set<string>> = {
-    'A': new Set(['href','title','target','rel']),
-    'TH': new Set(['colspan','rowspan','scope']),
-    'TD': new Set(['colspan','rowspan']),
-    'IMG': new Set(['src','alt','width','height'])
-  };
-
-  const ALLOWED_STYLES = new Set([
-    'font-weight',
-    'font-style',
-    'text-decoration',
-    'font-size',
-    'max-width','width','height'
-  ]);
-
-  function keepOnlyAllowedStyles(styleValue: string): string {
-    if (!styleValue) return '';
-    const kept: string[] = [];
-    const rules = styleValue.split(';');
-    for (let rule of rules) {
-      rule = rule.trim();
-      if (!rule) continue;
-      const [propRaw, ...valueParts] = rule.split(':');
-      if (!propRaw || valueParts.length === 0) continue;
-      const prop = propRaw.trim().toLowerCase();
-      const val = valueParts.join(':').trim();
-      if (prop.startsWith('--tw-')) continue;
-      if (ALLOWED_STYLES.has(prop)) {
-        kept.push(`${prop}: ${val}`);
-      }
-    }
-    return kept.join('; ');
-  }
-
-  // ---------- PASTE: SOLO TEXTO PLANO ----------
+  // Pegar/arrastrar solo texto
   const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault();
-
-    // Siempre pegamos texto plano; ignoramos HTML e imágenes del portapapeles
     const text = e.clipboardData?.getData('text/plain') ?? '';
     const el = contentRef.current;
     if (!el) return;
-
     el.focus();
     if (!restoreRange()) placeCaretAtEnd(el);
-
     if (text) {
-      // Inserta texto tal cual (sin etiquetas)
       document.execCommand('insertText', false, text);
       normalizeTopLevelToParagraphs();
       handleContentChange();
     }
-    // Si no hay texto, no hacemos nada (no pegamos imágenes ni HTML)
   };
 
-  // ---------- DROP ----------
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-
-    // Solo aceptamos texto arrastrado; ignoramos archivos/imágenes
     const text = e.dataTransfer.getData('text/plain') || '';
     if (text) {
       const el = contentRef.current;
@@ -315,12 +243,9 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
   };
 
-  // ---------- Sanitizador antes de guardar ----------
   function cleanHtml(dirty: string): string {
     if (!dirty) return '';
-
     const raw = dirty.replace(/\uFEFF/g, '').trim();
-
     const parser = new DOMParser();
     const doc = parser.parseFromString(`<div id="root">${raw}</div>`, 'text/html');
     const root = doc.getElementById('root') as HTMLElement;
@@ -328,7 +253,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
     doc.querySelectorAll('meta, title, style, script, link').forEach(n => n.remove());
 
-    // Unwrap h1..h3 si envuelven TODO
     root.querySelectorAll('h1, h2, h3').forEach(h => {
       if (h === root.firstElementChild && h === root.lastElementChild) {
         const frag = doc.createDocumentFragment();
@@ -360,7 +284,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       if (!list.querySelector('li')) list.remove();
     });
 
-    // Seguridad adicional para IMG
     root.querySelectorAll('img[src]').forEach((img: Element) => {
       const src = (img as HTMLImageElement).getAttribute('src') || '';
       if (/^javascript:/i.test(src)) (img as HTMLElement).remove();
@@ -370,7 +293,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       .replace(/(&nbsp;|\s)+<\/(p|li)>/gi, '</$2>')
       .replace(/(<p>\s*<\/p>)+/gi, '<p><br></p>');
 
-    // Normaliza top-level a <p> antes de devolver
     const tempHost = document.createElement('div');
     tempHost.innerHTML = root.innerHTML;
     const top = tempHost;
@@ -432,11 +354,9 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     return top.innerHTML.trim();
   }
 
-  // ---------- toolbar helpers ----------
-  const applyTextColor = () => formatText('foreColor', textColor);
-  const applyFontSize = () => formatText('fontSize', fontSize);
+  const applyTextColor = () => document.execCommand('foreColor', false, textColor);
+  const applyFontSize = () => document.execCommand('fontSize', false, fontSize);
 
-  // ---------- INSERTAR TABLA ----------
   const insertTable = (rows = 2, cols = 2, withHeader = true) => {
     const el = contentRef.current;
     if (!el) return;
@@ -449,14 +369,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     cols = clamp(cols, 1, 20);
 
     const makeCells = (count: number, tag: 'th' | 'td') =>
-      Array.from({ length: count })
-        .map(() => `<${tag}> </${tag}>`)
-        .join('');
+      Array.from({ length: count }).map(() => `<${tag}> </${tag}>`).join('');
 
     const thead = withHeader ? `<thead><tr>${makeCells(cols, 'th')}</tr></thead>` : '';
-    const bodyRows = Array.from({ length: rows })
-      .map(() => `<tr>${makeCells(cols, 'td')}</tr>`)
-      .join('');
+    const bodyRows = Array.from({ length: rows }).map(() => `<tr>${makeCells(cols, 'td')}</tr>`).join('');
 
     const tableHtml = `
       <table style="border-collapse:collapse; width:100%; margin:8px 0;">
@@ -477,7 +393,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     handleContentChange();
   };
 
-  // ---------- guardar ----------
   const handleSave = () => {
     const tema = title.trim();
     const htmlRaw = (contentRef.current?.innerHTML ?? '').trim();
@@ -494,7 +409,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
   const isEditing = Boolean(article?._id);
 
-  // ---------- Estado del modal de tabla ----------
   const [tableModalOpen, setTableModalOpen] = useState(false);
   const [tableRows, setTableRows] = useState(2);
   const [tableCols, setTableCols] = useState(2);
@@ -510,7 +424,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     closeTableModal();
   };
 
-  // ---------- Helpers de resaltado (toggle) ----------
   function toRgbString(input: string): string {
     const tmp = document.createElement('span');
     tmp.style.backgroundColor = input;
@@ -560,7 +473,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     const currentCmdVal =
       document.queryCommandValue('hiliteColor') || document.queryCommandValue('backColor') || '';
     const currentRgb = currentCmdVal ? toRgbString(currentCmdVal) : '';
-
     const shouldRemove = currentRgb && currentRgb === targetRgb;
 
     if (!shouldRemove) {
@@ -589,7 +501,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     handleContentChange();
   };
 
-  // ---------- IMÁGENES ----------
   const insertImageAtSelection = (src: string, alt = '') => {
     const el = contentRef.current;
     if (!el) return;
@@ -627,7 +538,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
-      {/* CSS SOLO PARA EL EDITOR (no se guarda) */}
       <style>
         {`
           .content-editable { white-space: pre-wrap; }
@@ -640,12 +550,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           .content-editable ol { list-style: decimal; }
           .content-editable li { margin: 0.125rem 0; }
 
-          /* Estilos para tablas dentro del editor */
           .content-editable table { border-collapse: collapse; width: 100%; }
           .content-editable th, .content-editable td { border: 1px solid #e5e7eb; padding: 6px; vertical-align: top; }
           .content-editable thead th { background: #f3f4f6; }
 
-          /* Imágenes responsivas */
           .content-editable img {
             max-width: 100%;
             height: auto;
@@ -654,7 +562,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         `}
       </style>
 
-      {/* Header */}
       <div className="flex items-center justify-between p-6 border-b">
         <h2 className="text-xl font-semibold text-gray-800">
           {isEditing ? 'Editar Artículo' : 'Nuevo Artículo'}
@@ -678,7 +585,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         </div>
       </div>
 
-      {/* Title */}
       <div className="p-6 border-b">
         <label className="block text-sm font-medium text-gray-700 mb-2">Título</label>
         <input
@@ -690,13 +596,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         />
       </div>
 
-      {/* Content */}
       <div className="p-6">
         <label className="block text-sm font-medium text-gray-700 mb-2">Contenido</label>
 
-        {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2 mb-4 p-2 bg-gray-50 rounded-lg">
-          {/* Bold/Italic/Underline */}
           <button onClick={() => formatText('bold')} className="p-2 hover:bg-gray-200 rounded" title="Negrita">
             <Bold className="w-4 h-4" />
           </button>
@@ -707,7 +610,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             <Underline className="w-4 h-4" />
           </button>
 
-          {/* Listas */}
           <button onClick={() => formatText('insertUnorderedList')} className="p-2 hover:bg-gray-200 rounded" title="Lista con viñetas">
             <List className="w-4 h-4" />
           </button>
@@ -715,16 +617,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             <ListOrdered className="w-4 h-4" />
           </button>
 
-          {/* Tabla -> abre modal */}
-          <button
-            onClick={openTableModal}
-            className="p-2 hover:bg-gray-200 rounded"
-            title="Insertar tabla"
-          >
+          <button onClick={openTableModal} className="p-2 hover:bg-gray-200 rounded" title="Insertar tabla">
             <Table className="w-4 h-4" />
           </button>
 
-          {/* Imagen */}
           <div className="flex items-center gap-2">
             <button
               onClick={chooseImageFromDisk}
@@ -753,7 +649,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             />
           </div>
 
-          {/* Resaltar (toggle) */}
           <div className="flex items-center gap-2">
             <button onClick={toggleHighlight} className="p-2 hover:bg-gray-200 rounded" title="Resaltar (toggle)">
               <Highlighter className="w-4 h-4" />
@@ -761,13 +656,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             <input type="color" value={highlightColor} onChange={(e) => setHighlightColor(e.target.value)} />
           </div>
 
-          {/* Enmarcar (simple) */}
           <div className="flex items-center gap-2">
             <button
-              onClick={() => formatText(
-                'insertHTML',
-                `<span style="border:1px solid ${borderColor};padding:2px 6px;border-radius:6px;display:inline-block;">${window.getSelection()?.toString() || '&nbsp;'}</span>`
-              )}
+              onClick={() =>
+                formatText(
+                  'insertHTML',
+                  `<span style="border:1px solid ${borderColor};padding:2px 6px;border-radius:6px;display:inline-block;">${window.getSelection()?.toString() || '&nbsp;'}</span>`
+                )
+              }
               className="p-2 hover:bg-gray-200 rounded"
               title="Enmarcar"
             >
@@ -776,7 +672,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             <input type="color" value={borderColor} onChange={(e) => setBorderColor(e.target.value)} />
           </div>
 
-          {/* Color de texto */}
           <div className="flex items-center gap-2">
             <button onClick={applyTextColor} className="p-2 hover:bg-gray-200 rounded" title="Color de texto">
               <Type className="w-4 h-4" />
@@ -784,7 +679,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} />
           </div>
 
-          {/* Tamaño de texto */}
           <select
             value={fontSize}
             onChange={(e) => setFontSize(e.target.value)}
@@ -802,7 +696,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           </select>
         </div>
 
-        {/* Editor */}
         <div className="relative">
           {!content && <div className="absolute top-2 left-3 text-gray-400 text-sm pointer-events-none">Ingrese el contenido...</div>}
           <div
@@ -817,12 +710,9 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         </div>
       </div>
 
-      {/* Modal de configuración de tabla */}
       {tableModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* backdrop */}
           <div className="absolute inset-0 bg-black/40" onClick={closeTableModal} />
-          {/* dialog */}
           <div className="relative z-10 w-full max-w-sm bg-white rounded-xl shadow-lg border p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold">Insertar tabla</h3>
@@ -865,16 +755,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             </div>
 
             <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={closeTableModal}
-                className="px-4 py-2 rounded-lg border hover:bg-gray-50"
-              >
+              <button onClick={closeTableModal} className="px-4 py-2 rounded-lg border hover:bg-gray-50">
                 Cancelar
               </button>
-              <button
-                onClick={confirmInsertTable}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
-              >
+              <button onClick={confirmInsertTable} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
                 Insertar
               </button>
             </div>

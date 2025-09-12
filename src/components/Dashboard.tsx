@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, LogOut } from 'lucide-react';
 import Sidebar from './Sidebar';
 import ArticleList from './ArticleList';
@@ -14,6 +14,38 @@ type Option = { value: string; label: string };
 interface DashboardProps {
   user: User;
   onLogout: () => void;
+}
+
+/** --------- CACHÉ LOCAL --------- */
+const CACHE_KEY = 'infecto_articles_cache_v1';
+
+function loadCache(): Article[] {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCache(list: Article[]) {
+  try {
+    if (Array.isArray(list) && list.length > 0) {
+      localStorage.setItem(CACHE_KEY, JSON.stringify(list));
+    }
+    // si viene vacío, no lo guardamos para no “pisar” la caché previa buena
+  } catch {}
+}
+
+function removeFromCache(id: string) {
+  const current = loadCache();
+  const filtered = current.filter(a => a._id !== id);
+  if (filtered.length > 0) {
+    saveCache(filtered);
+  }
+  return filtered;
 }
 
 /** Modal de éxito */
@@ -63,7 +95,6 @@ const SuccessModal: React.FC<{
           </button>
         </div>
       </div>
-      {/* animaciones tailwind opcionales */}
       <style>{`
         .animate-fadeIn { animation: fadeIn .18s ease-out; }
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
@@ -73,8 +104,10 @@ const SuccessModal: React.FC<{
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
-const [activeView, setActiveView] =
-  useState<'articles' | 'add' | 'edit' | 'view' | 'addTopic'>('articles');  const [loading, setLoading] = useState(true);
+  const [activeView, setActiveView] =
+    useState<'articles' | 'add' | 'edit' | 'view' | 'addTopic'>('articles');
+
+  const [loading, setLoading] = useState(true);
   const [articles, setArticles] = useState<Article[]>([]);
   const [currentArticle, setCurrentArticle] = useState<Article | null>(null);
 
@@ -100,16 +133,45 @@ const [activeView, setActiveView] =
   // Modal de éxito
   const [successOpen, setSuccessOpen] = useState(false);
 
-  // Carga inicial
+  // Flags de control
+  const hasFetchedRef = useRef(false);
+  const didMountRef = useRef(false);
+
+  // Persistir en caché cuando cambien los artículos (solo si hay datos y no es el primer render)
   useEffect(() => {
-    const fetchData = async () => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    if (articles.length > 0) {
+      saveCache(articles);
+    }
+  }, [articles]);
+
+  // Carga inicial (con caché)
+  useEffect(() => {
+    const apiUrl = import.meta.env.VITE_API_URL;
+
+    const fetchArticlesFirstTime = async () => {
       try {
-        const apiUrl = import.meta.env.VITE_API_URL;
-        const res = await fetch(`${apiUrl}/articles`);
-        const json = await res.json();
-        setArticles(json);
+        // 1) Intentar desde caché
+        const cached = loadCache();
+        if (cached.length > 0) {
+          setArticles(cached);
+          setLoading(false);
+          return; // No llamar a la API si ya hay caché
+        }
+
+        // 2) Si no hay caché y tampoco hemos pedido en esta sesión, pedir a la API
+        if (!hasFetchedRef.current) {
+          const res = await fetch(`${apiUrl}/articles`);
+          const json = await res.json();
+          setArticles(json);
+          saveCache(json);       // Guardar en caché si trajo datos
+          hasFetchedRef.current = true;
+        }
       } catch (err) {
-        console.error('Error cargando datos:', err);
+        console.error('Error cargando artículos:', err);
       } finally {
         setLoading(false);
       }
@@ -117,10 +179,8 @@ const [activeView, setActiveView] =
 
     const getTemas = async () => {
       try {
-        const apiUrl = import.meta.env.VITE_API_URL;
         const res = await fetch(`${apiUrl}/nivelesScraping/niveles/temas`);
         const json = await res.json();
-        // Solo raíz (nivel 0)
         const opts0: Option[] = (json?.[0] ?? []).map((it: any) => ({ value: it._id, label: it.nombre }));
         setDd1Options(opts0);
       } catch (e) {
@@ -129,7 +189,7 @@ const [activeView, setActiveView] =
     };
 
     getTemas();
-    fetchData();
+    fetchArticlesFirstTime();
   }, []);
 
   // Utils
@@ -141,7 +201,6 @@ const [activeView, setActiveView] =
   });
 
   const parseFullId = (fullId: string) => {
-    // fullId: "L<number>:<mongoId>"
     const [prefix, rawId] = fullId.split(':');
     const m = /^L(\d+)$/.exec(prefix ?? '');
     const level = m ? Number(m[1]) : null;
@@ -157,19 +216,16 @@ const [activeView, setActiveView] =
   const loadChildren = useCallback(async (parentId: string | null): Promise<DriveNode[]> => {
     const apiUrl = import.meta.env.VITE_API_URL;
 
-    // 1) raíz: solo opciones de nivel 0
     if (parentId === null) {
       return dd1Options.map(optionToFolder('L0'));
     }
 
-    // 2) carpeta clickeada: parsear nivel e id
     const { level, rawId } = parseFullId(parentId);
     if (level === null || !rawId) return [];
 
-    const nextLevel = level + 1; // L0 -> 1, L1 -> 2, etc
+    const nextLevel = level + 1;
 
     try {
-      // hijos (subcarpetas) de esta carpeta
       const res = await fetch(`${apiUrl}/nivelesScraping/${rawId}/${nextLevel}`);
       const json = await res.json();
 
@@ -180,11 +236,8 @@ const [activeView, setActiveView] =
         starred: false,
       }));
 
-      if (childrenAsFolders.length > 0) {
-        return childrenAsFolders;
-      }
+      if (childrenAsFolders.length > 0) return childrenAsFolders;
 
-      // hoja → trae artículos de esa carpeta
       const resArticles = await fetch(`${apiUrl}/articles/${rawId}`);
       const arts = await resArticles.json();
 
@@ -202,7 +255,7 @@ const [activeView, setActiveView] =
     }
   }, [dd1Options]);
 
-  // Guardar (crear/editar)
+  // Guardar (crear/editar) desde el editor (sin POST aún si es creación)
   const handleSaveArticle = async (data: {
     _id?: string; tema: string; contenidos: string[];
     ref_tabla_nivel0?: string | null;
@@ -211,31 +264,29 @@ const [activeView, setActiveView] =
     ref_tabla_nivel3?: string | null;
   }) => {
     if (data._id) {
-      setArticles((prev) =>
-        prev.map((a) => (a._id === data._id ? { ...a, ...data, updatedAt: new Date().toISOString() } as any : a))
-      );
-      console.log(data)
+      // Edición local (editor sin POST)
+      setArticles((prev) => {
+        const updated = prev.map((a) => (a._id === data._id ? { ...a, ...data, updatedAt: new Date().toISOString() } as any : a));
+        if (updated.length > 0) saveCache(updated);
+        return updated;
+      });
       setActiveView('articles');
       setCurrentArticle(null);
       return;
     }
-    // crear → abrir modal para elegir carpeta de destino (se resolverá dinámicamente)
     setPendingArticle(data);
     setOpen(true);
   };
 
-  const handleUpdateArticle = async  (data: {
+  const handleUpdateArticle = async (data: {
     _id?: string; tema: string; contenidos: string[];
     ref_tabla_nivel0?: string | null;
     ref_tabla_nivel1?: string | null;
     ref_tabla_nivel2?: string | null;
     ref_tabla_nivel3?: string | null;
   }) => {
-      
-    console.log(data)
- try {
+    try {
       const apiUrl = import.meta.env.VITE_API_URL;
-
       const res = await fetch(`${apiUrl}/nivelesScraping/actualizarArticulo/${data._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -247,40 +298,37 @@ const [activeView, setActiveView] =
         throw new Error(`HTTP ${res.status} ${txt}`);
       }
 
-      const created = await res.json();
-      // refresca listado principal
-      setArticles((prev) => [...prev, created]);
-
+      const updated = await res.json();
+      setArticles(prev => {
+        const next = prev.map(a => (a._id === updated._id ? updated : a));
+        if (next.length > 0) saveCache(next);
+        return next;
+      });
 
       resetToNewArticle();
       setSuccessOpen(true);
     } catch (e) {
-      console.error('Error creando artículo:', e);
-      // aquí podrías mostrar un toast de error si lo deseas
+      console.error('Error actualizando artículo:', e);
     } finally {
       setSaving(false);
     }
+  };
 
-  }
-
-  // Helper para “limpiar todo” y preparar una nueva captura
   const resetToNewArticle = () => {
     setPendingArticle(null);
     setCurrentArticle(null);
-    // Remontar editor para limpiar inputs
     setEditorKey((k) => k + 1);
-    // Ir directo a la vista "add" para empezar desde cero
     setActiveView('add');
   };
 
-  // Al elegir carpeta en el modal y GUARDAR
+  // Crear (POST) cuando eliges carpeta en el modal
   const handleMoveTo = async (target: { fullId: string; level: number | null; rawId: string }) => {
     if (!pendingArticle || saving) return;
 
     setSaving(true);
     const apiUrl = import.meta.env.VITE_API_URL;
 
-    const rawId = target.rawId; // id limpio de la carpeta
+    const rawId = target.rawId;
     const newArticle: Article = {
       tema: pendingArticle.tema,
       contenidos: pendingArticle.contenidos,
@@ -291,7 +339,6 @@ const [activeView, setActiveView] =
     } as any;
 
     try {
-
       const res = await fetch(`${apiUrl}/nivelesScraping/crearArticulo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -303,22 +350,22 @@ const [activeView, setActiveView] =
         throw new Error(`HTTP ${res.status} ${txt}`);
       }
 
-      const created = await res.json();
-      // refresca listado principal
-      setArticles((prev) => [...prev, created]);
+      const created: Article = await res.json();
 
-      // ✅ cerrar modal mover, limpiar y mostrar éxito
+      setArticles((prev) => {
+        const next = [...prev, created];
+        if (next.length > 0) saveCache(next);
+        return next;
+      });
+
       setOpen(false);
       resetToNewArticle();
       setSuccessOpen(true);
     } catch (e) {
       console.error('Error creando artículo:', e);
-      // aquí podrías mostrar un toast de error si lo deseas
     } finally {
       setSaving(false);
     }
-
-
   };
 
   const handleEditArticle = (article: Article) => {
@@ -331,17 +378,19 @@ const [activeView, setActiveView] =
     setActiveView('view');
   };
 
-  //TODO Hacer funcionalidad de eliminar
+  // Eliminar (optimista)
   const handleDeleteArticle = async (id: string) => {
-        
     const apiUrl = import.meta.env.VITE_API_URL;
 
-    if (window.confirm('¿Eliminar este artículo?')) {
-      setArticles((prev) => prev.filter((a) => a._id !== id));
-    }
+    if (!window.confirm('¿Eliminar este artículo?')) return;
 
-     try {
+    setArticles(prev => {
+      const next = prev.filter(a => a._id !== id);
+      if (next.length > 0) saveCache(next); // si queda vacío, NO guardamos []
+      return next;
+    });
 
+    try {
       const res = await fetch(`${apiUrl}/articles/delete/${id}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -352,96 +401,92 @@ const [activeView, setActiveView] =
         throw new Error(`HTTP ${res.status} ${txt}`);
       }
 
-      const created = await res.json();
-      // refresca listado principal
-      setArticles((prev) => [...prev, created]);
-
-      // ✅ cerrar modal mover, limpiar y mostrar éxito
-      setOpen(false);
-      //resetToNewArticle();
       setSuccessOpen(true);
     } catch (e) {
-      console.error('Error eliminando artículo:', e);
-      // aquí podrías mostrar un toast de error si lo deseas
-    } 
-
-
+      console.error('Error eliminando artículo (revirtiendo caché):', e);
+      const cached = loadCache();
+      if (cached.length > 0) setArticles(cached);
+    }
   };
 
   const handleAddArticle = () => {
-    resetToNewArticle(); // garantiza editor limpio
+    resetToNewArticle();
   };
 
   const renderContent = () => {
-  switch (activeView) {
-    case 'articles':
-      return (
-        <ArticleList
-          articles={articles}
-          onEdit={handleEditArticle}
-          onDelete={handleDeleteArticle}
-          onView={handleViewArticle}
-          onAdd={handleAddArticle}
-        />
-      );
-    case 'add':
-    case 'edit':
-      return (
-        <ArticleEditor
-          key={editorKey}
-          article={currentArticle || undefined}
-          onSave={handleSaveArticle}
-          onUpdate={handleUpdateArticle}
-          onCancel={() => setActiveView('articles')}
-        />
-      );
-    case 'view':
-      return currentArticle ? (
-        <ArticleView
-          article={currentArticle}
-          onBack={() => setActiveView('articles')}
-          onEdit={handleEditArticle}
-        />
-      ) : null;
+    switch (activeView) {
+      case 'articles':
+        return (
+          <ArticleList
+            articles={articles}
+            onEdit={handleEditArticle}
+            onDelete={handleDeleteArticle}
+            onView={handleViewArticle}
+            onAdd={handleAddArticle}
+          />
+        );
+      case 'add':
+      case 'edit':
+        return (
+          <ArticleEditor
+            key={editorKey}
+            article={currentArticle || undefined}
+            onSave={handleSaveArticle}
+            onUpdate={handleUpdateArticle}
+            onCancel={() => setActiveView('articles')}
+          />
+        );
+      case 'view':
+        return currentArticle ? (
+          <ArticleView
+            article={currentArticle}
+            onBack={() => setActiveView('articles')}
+            onEdit={handleEditArticle}
+          />
+        ) : null;
 
-    // 3) NUEVO: vista para añadir temas
-    case 'addTopic':
-      return (
-      <ThemeCreator
-          key={editorKey}
-          article={currentArticle || undefined}
-          onSave={handleSaveArticle}
-          onUpdate={handleUpdateArticle}
-          onCancel={() => setActiveView('articles')}
-        />)
+      case 'addTopic':
+        return (
+          <ThemeCreator
+            key={editorKey}
+            article={currentArticle || undefined}
+            onSave={handleSaveArticle}
+            onUpdate={handleUpdateArticle}
+            onCancel={() => setActiveView('articles')}
+          />
+        );
 
-    default:
-      return null;
-  }
-};
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-     <Sidebar
-  activeView={
-    activeView === 'add' || activeView === 'edit'
-      ? 'add'
-      : activeView === 'addTopic'
-      ? 'addTopic'
-      : 'articles'
-  }
-  onViewChange={(view) => {
-    if (view === 'add') {
-      handleAddArticle();      // tu lógica de nuevo artículo
-      setActiveView('add');
-    } else if (view === 'addTopic') {
-      // 👇 aquí decides qué hacer: mostrar formulario de nuevo tema, etc.
-      setActiveView('addTopic');
-    } else if (view === 'articles') {
-      setActiveView('articles');
-    }
-  }}
-/>
+      <Sidebar
+        activeView={
+          activeView === 'add' || activeView === 'edit'
+            ? 'add'
+            : activeView === 'addTopic'
+            ? 'addTopic'
+            : 'articles'
+        }
+        onViewChange={(view) => {
+          if (view === 'add') {
+            handleAddArticle();
+            setActiveView('add');
+          } else if (view === 'addTopic') {
+            setActiveView('addTopic');
+          } else if (view === 'articles') {
+            // NO sobrescribas con caché vacía
+            if (articles.length === 0) {
+              const cached = loadCache();
+              if (cached.length > 0) setArticles(cached);
+            }
+            setActiveView('articles');
+          }
+        }}
+      />
 
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
@@ -484,11 +529,11 @@ const [activeView, setActiveView] =
       <SuccessModal
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
-        title="¡Artículo creado exitosamente!"
-        message="Tu artículo quedó guardado. Puedes continuar creando otro o volver al listado."
+        title="¡Acción exitosa!"
+        message="Cambios aplicados y sincronizados con la caché local."
       />
     </div>
   );
 };
 
-export default Dashboard; 
+export default Dashboard;
