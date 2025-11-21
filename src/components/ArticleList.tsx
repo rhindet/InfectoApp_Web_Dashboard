@@ -17,7 +17,7 @@ const ArticleList: React.FC<ArticleListProps> = ({
   onView,
   onAdd
 }) => {
-  
+
   const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleDateString('es-ES', {
       day: '2-digit',
@@ -33,6 +33,14 @@ const ArticleList: React.FC<ArticleListProps> = ({
     for (const a of articles) m[a._id] = (m[a._id] || 0) + 1;
     return m;
   }, [articles]);
+
+
+  const sortedArticles = React.useMemo(() => {
+    return [...articles].sort((a, b) =>
+      (a.tema || "").localeCompare(b.tema || "", "es", { sensitivity: "base" })
+    );
+  }, [articles]);
+
 
   // 2) Log de duplicados (opcional)
   React.useEffect(() => {
@@ -109,7 +117,7 @@ const ArticleList: React.FC<ArticleListProps> = ({
                 </td>
               </tr>
             ) : (
-              articles.map((article) => {
+              sortedArticles.map((article) => {
                 const isDup = idCounts[article._id] > 1;
                 return (
                   <tr key={article._id} className="hover:bg-gray-50">
@@ -125,7 +133,7 @@ const ArticleList: React.FC<ArticleListProps> = ({
                       <div className="text-sm font-medium text-gray-900">{article.tema}</div>
                       <div className="text-sm text-gray-500">
                         {"Contenidos"}
-                      
+
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
