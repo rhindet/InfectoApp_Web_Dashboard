@@ -83,6 +83,21 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     return { level:fixlevel, id: raw ?? "", fullId };
   };
 
+   const parseLevelAndIdGuardar = (fullId?: string | null) => {
+    console.log("fullId",fullId)
+
+
+    if (!fullId) return { level: 0 as number | null, id: "", fullId: "" };
+
+    const [prefix, raw] = fullId.split(":");
+    console.log(raw)
+    const m = /^L(\d+)$/.exec(prefix ?? "");
+    const level = m ? Number(m[1]) : null;
+
+    return { level, id: raw ?? "", fullId };
+  };
+
+
   // Carga de hijos al cambiar la ubicación actual
   useEffect(() => {
     if (!isOpen) return;
@@ -378,7 +393,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
                           if (e.key === "Enter") {
                             e.preventDefault();
                             console.log(editingId)
-                            const { id, level } = parseLevelAndId(editingId);
+                            const { id, level } = parseLevelAndIdGuardar(editingId);
                             console.log(id)
                             console.log(level)
                             confirmInlineEdit(id, level);
