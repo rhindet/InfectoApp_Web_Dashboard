@@ -353,6 +353,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             e.preventDefault();
+                            console.log(e)
                             confirmInlineEdit();
                           }
                           if (e.key === "Escape") {
@@ -371,6 +372,8 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              console.log(e)
+
                               startInlineEdit(n);
                             }}
                             className="p-1 rounded hover:bg-gray-100"
@@ -387,6 +390,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              console.log(e)
                               confirmInlineEdit();
                             }}
                             className="px-2 py-1 text-xs rounded bg-green-600 text-white hover:bg-green-700"
@@ -396,6 +400,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              
                               cancelInlineEdit();
                             }}
                             className="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-50"

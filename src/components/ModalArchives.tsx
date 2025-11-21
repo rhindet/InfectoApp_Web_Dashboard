@@ -68,13 +68,19 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
   );
 
   const parseLevelAndId = (fullId?: string | null) => {
-    if (!fullId) return { level: null as number | null, id: "", fullId: "" };
+    console.log("fullId",fullId)
+
+
+    if (!fullId) return { level: 0 as number | null, id: "", fullId: "" };
 
     const [prefix, raw] = fullId.split(":");
+    console.log(raw)
     const m = /^L(\d+)$/.exec(prefix ?? "");
     const level = m ? Number(m[1]) : null;
 
-    return { level, id: raw ?? "", fullId };
+    const fixlevel = level + 1
+
+    return { level:fixlevel, id: raw ?? "", fullId };
   };
 
   // Carga de hijos al cambiar la ubicación actual
@@ -111,6 +117,8 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
 
     const hasFolders = nodes.some((n) => n.type === "folder");
     const { level, id, fullId } = parseLevelAndId(currentParentId ?? null);
+
+    
 
     if (!hasFolders && currentParentId) {
       setSelectedTarget({ fullId: currentParentId, level, rawId: id });
@@ -165,19 +173,20 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     if (!name) return;
 
     const { level, id: parentRawId } = parseLevelAndId(currentParentId ?? null);
+    console.log("level",level)
+    
 
     const parentId =
       parentRawId && parentRawId.trim() !== ""
         ? parentRawId
         : (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2));
 
-    const newLevel = level == null ? 0 : level + 1;
 
     const data = {
       name,
       parentId,
       type: "folder",
-      level: newLevel,
+      level: level,
     };
 
     console.log("POST /nivelesScraping/niveles/temas/crear", data);
@@ -198,7 +207,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
       const created = await res.json();
 
       const newNode: DriveNode = {
-        id: created.fullId ?? `L${newLevel}:${created._id}`,
+        id: created.fullId ?? `L${level}:${created._id}`,
         name: created.name ?? name,
         type: "folder",
       };
@@ -222,11 +231,36 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     setEditingName("");
   };
 
-  const confirmInlineEdit = () => {
+  const confirmInlineEdit = async (id, level) => {
     const name = editingName.trim();
     if (!name || !editingId) {
       cancelInlineEdit();
       return;
+    }
+
+    const data = {
+      level,
+      name
+    }
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const res = await fetch(`${apiUrl}/nivelesScraping/actualizarThema/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status} ${txt}`);
+      }
+
+      const updated = await res.json();
+      console.log(updated)
+
+    } catch (e) {
+      console.log("error")
     }
 
     setNodes((prev) =>
@@ -319,11 +353,10 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
                 return (
                   <li
                     key={n.id}
-                    className={`flex items-center gap-3 px-3 py-2 ${
-                      n.type === "folder"
-                        ? "cursor-pointer hover:bg-gray-50"
-                        : "cursor-default opacity-90"
-                    }`}
+                    className={`flex items-center gap-3 px-3 py-2 ${n.type === "folder"
+                      ? "cursor-pointer hover:bg-gray-50"
+                      : "cursor-default opacity-90"
+                      }`}
                     onClick={() =>
                       n.type === "folder" && !isEditing ? enterFolder(n) : undefined
                     }
@@ -344,7 +377,11 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             e.preventDefault();
-                            confirmInlineEdit();
+                            console.log(editingId)
+                            const { id, level } = parseLevelAndId(editingId);
+                            console.log(id)
+                            console.log(level)
+                            confirmInlineEdit(id, level);
                           }
                           if (e.key === "Escape") {
                             e.preventDefault();
@@ -411,9 +448,8 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
               <button
                 onClick={handleStartAdd}
                 disabled={disableAdd}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-white ${
-                  disableAdd ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
-                }`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-white ${disableAdd ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+                  }`}
               >
                 <Plus size={20} />
                 Agregar
@@ -422,22 +458,27 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
           )}
         </div>
 
+        {mode !== 'topic' && (
+          <div className="px-5 py-3 border-t flex items-center justify-end gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded border hover:bg-gray-50">
+              Cancelar
+            </button>
+            <button
+              onClick={handleConfirmButton}
+              disabled={isConfirmDisabled}
+              className={`px-4 py-2 text-sm rounded text-white ${!isConfirmDisabled ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"
+                }`}
+            >
+              Confirmar
+            </button>
+          </div>
+        )}
         {/* Footer */}
-        <div className="px-5 py-3 border-t flex items-center justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded border hover:bg-gray-50">
-            Cancelar
-          </button>
-          <button
-            onClick={handleConfirmButton}
-            disabled={isConfirmDisabled}
-            className={`px-4 py-2 text-sm rounded text-white ${
-              !isConfirmDisabled ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"
-            }`}
-          >
-            Confirmar
-          </button>
-        </div>
+
+
+
       </div>
+
     </div>,
     document.body
   );
@@ -450,9 +491,8 @@ const TabButton: React.FC<{ active?: boolean; onClick?: () => void; children: Re
 }) => (
   <button
     onClick={onClick}
-    className={`px-1.5 pb-2 border-b-2 -mb-px ${
-      active ? "border-blue-600 text-blue-700" : "border-transparent text-gray-600 hover:text-gray-800"
-    }`}
+    className={`px-1.5 pb-2 border-b-2 -mb-px ${active ? "border-blue-600 text-blue-700" : "border-transparent text-gray-600 hover:text-gray-800"
+      }`}
   >
     {children}
   </button>
