@@ -33,7 +33,7 @@ const ThemeCreator: React.FC<ThemeCreatorProps> = ({ article, onSave, onCancel }
     <div className="bg-white rounded-lg shadow-sm border">
       {/* Header */}
       <div className="flex items-center justify-between p-6 border-b">
-        <h2 className="text-xl font-semibold text-gray-800">Nuevo tema</h2>
+        <h2 className="text-xl font-semibold text-gray-800">Nueva Sección</h2>
         <div className="flex gap-2">
           <button
             onClick={handleSave}
