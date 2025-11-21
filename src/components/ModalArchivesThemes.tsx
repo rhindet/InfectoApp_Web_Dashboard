@@ -7,6 +7,7 @@ import {
   Star,
   X,
   Pencil,
+  Trash2,
 } from "lucide-react";
 
 type NodeId = string;
@@ -16,15 +17,12 @@ export type DriveNode = {
   name: string;
   type: "folder" | "file";
   starred?: boolean;
-  level?: string | number;
+  level?:string | Number
 };
 
 type LoadChildren = (parentId: NodeId | null) => Promise<DriveNode[]>;
 
-type ModalMode = "topic" | "move";
-
 type ModalMoveDialogProps = {
-  mode: ModalMode; // 👈 NUEVO: "topic" (crear tema) o "move" (mover artículo)
   isOpen: boolean;
   itemName: string;
   currentLocationLabel?: string;
@@ -35,7 +33,6 @@ type ModalMoveDialogProps = {
 };
 
 export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
-  mode,
   isOpen,
   itemName,
   currentLocationLabel = "Mis Articulos",
@@ -56,9 +53,13 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
 
   const [tab, setTab] = useState<"suggested" | "starred" | "all">("suggested");
 
-  // 👉 Estados de creación/edición (solo realmente útiles en modo "topic")
+  // estado para agregar nuevo elemento
   const [isAdding, setIsAdding] = useState(false);
   const [newName, setNewName] = useState("");
+    const [Level, setLevel] = useState(0);
+
+
+  // estado para editar inline
   const [editingId, setEditingId] = useState<NodeId | null>(null);
   const [editingName, setEditingName] = useState("");
 
@@ -67,15 +68,16 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     [path, rootId]
   );
 
+  // Helper para parsear nivel y id "limpio"
   const parseLevelAndId = (fullId?: string | null) => {
-    if (!fullId) return { level: null as number | null, id: "", fullId: "" };
+  if (!fullId) return { level: null as number | null, id: "", fullId: "" };
 
-    const [prefix, raw] = fullId.split(":");
-    const m = /^L(\d+)$/.exec(prefix ?? "");
-    const level = m ? Number(m[1]) : null;
+  const [prefix, raw] = fullId.split(":");
+  const m = /^L(\d+)$/.exec(prefix ?? "");
+  const level = m ? Number(m[1]) : null; // nivel REAL (0,1,2,3...)
 
-    return { level, id: raw ?? "", fullId };
-  };
+  return { level, id: raw ?? "", fullId };
+};
 
   // Carga de hijos al cambiar la ubicación actual
   useEffect(() => {
@@ -84,15 +86,15 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     setSelectedTarget(null);
     setEditingId(null);
     setEditingName("");
-    setIsAdding(false);
-    setNewName("");
 
     loadChildren(currentParentId ?? null)
-      .then((items) => setNodes(items))
+      .then((items) => {
+        setNodes(items);
+      })
       .finally(() => setLoading(false));
   }, [isOpen, currentParentId, loadChildren]);
 
-  // Reset al cerrar
+  // Reset total al cerrar
   useEffect(() => {
     if (isOpen) return;
     setPath([]);
@@ -105,15 +107,25 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     setEditingName("");
   }, [isOpen]);
 
-  // Selección por defecto: hoja (como antes)
+  // Si la carpeta actual es "hoja" (sin subcarpetas), la usamos como destino por defecto
   useEffect(() => {
     if (!isOpen || loading) return;
 
     const hasFolders = nodes.some((n) => n.type === "folder");
     const { level, id, fullId } = parseLevelAndId(currentParentId ?? null);
+        
+     setLevel(0)
 
     if (!hasFolders && currentParentId) {
-      setSelectedTarget({ fullId: currentParentId, level, rawId: id });
+       setLevel(level!)
+
+       setSelectedTarget({ fullId: currentParentId, level, rawId: id });
+
+      if (nodes.length > 0) {
+        console.log("Leaf with items (files). Current folder as target:", { level, id, fullId });
+      } else {
+        console.log("Leaf EMPTY (no folders, no files). Current folder as target:", { level, id, fullId });
+      }
     } else {
       setSelectedTarget(null);
     }
@@ -124,94 +136,108 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     return nodes;
   }, [nodes, tab]);
 
+  // nivel “solo archivos”: no hay carpetas
   const isFileLevel = useMemo(
     () => nodes.length > 0 && nodes.every((n) => n.type === "file"),
     [nodes]
   );
 
+  // deshabilitar agregar si ya estamos en nivel de solo files
   const disableAdd = isAdding || isFileLevel;
 
   if (!isOpen) return null;
 
+  // Navegar a carpeta hija
   const enterFolder = (n: DriveNode) => {
     if (n.type !== "folder") return;
     setPath((prev) => [...prev, { id: n.id, name: n.name }]);
     setSelectedTarget(null);
   };
 
+  // Breadcrumb
   const goToIndex = (idx: number) => {
     const newPath = idx >= 0 ? path.slice(0, idx + 1) : [];
     setPath(newPath);
     setSelectedTarget(null);
   };
 
-  // --------- AGREGAR NUEVO ELEMENTO (modo "topic") ---------
+  // --------- AGREGAR NUEVO ELEMENTO ---------
+
   const handleStartAdd = () => {
-    if (mode !== "topic") return; // solo en addTopic
     if (disableAdd) return;
     setIsAdding(true);
     setNewName("");
+    
+
   };
 
-  const handleCancelAdd = () => {
+  const handleCancelAdd =  ()  =>   {
     setIsAdding(false);
     setNewName("");
   };
 
   const handleConfirmAdd = async () => {
-    if (mode !== "topic") return;
+  const name = newName.trim();
+  if (!name) return;
 
-    const name = newName.trim();
-    if (!name) return;
+  // Obtener nivel e id del padre actual (puede ser null en raíz)
+  const { level, id: parentRawId } = parseLevelAndId(currentParentId ?? null);
 
-    const { level, id: parentRawId } = parseLevelAndId(currentParentId ?? null);
+  // Si no hay parentRawId, generamos uno random único para parentId
+  const parentId =
+    parentRawId && parentRawId.trim() !== ""
+      ? parentRawId
+      : (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2));
 
-    const parentId =
-      parentRawId && parentRawId.trim() !== ""
-        ? parentRawId
-        : (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2));
+  // Nivel del nuevo nodo:
+  // - si estamos en raíz (level === null) → 0
+  // - si estamos dentro de L0 → hijo será nivel 1
+  // - si estamos dentro de L1 → hijo será nivel 2
+  const newLevel = level == null ? 0 : level + 1;
 
-    const newLevel = level == null ? 0 : level + 1;
-
-    const data = {
-      name,
-      parentId,
-      type: "folder",
-      level: newLevel,
-    };
-
-    console.log("POST /nivelesScraping/niveles/temas/crear", data);
-
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL;
-      const res = await fetch(`${apiUrl}/nivelesScraping/niveles/temas/crear`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status} ${txt}`);
-      }
-
-      const created = await res.json();
-
-      const newNode: DriveNode = {
-        id: created.fullId ?? `L${newLevel}:${created._id}`,
-        name: created.name ?? name,
-        type: "folder",
-      };
-
-      setNodes((prev) => [...prev, newNode]);
-      setIsAdding(false);
-      setNewName("");
-    } catch (err) {
-      console.error("Error creando nivel:", err);
-    }
+  // Payload que se manda al backend
+  const data = {
+    name,
+    parentId,
+    type: "folder",
+    level: newLevel, 
   };
 
-  // --------- EDITAR INLINE (opcional) ---------
+  console.log("POST /nivelesScraping/niveles/temas/crear", data);
+
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL;
+    const res = await fetch(`${apiUrl}/nivelesScraping/niveles/temas/crear`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status} ${txt}`);
+    }
+
+    const created = await res.json();
+
+    // Nodo que se verá en el árbol del modal
+    const newNode: DriveNode = {
+      id: created.fullId ?? `L${newLevel}:${created._id}`,
+      name: created.name ?? name,
+      type: "folder",
+    };
+
+    setNodes((prev) => [...prev, newNode]);
+    setIsAdding(false);
+    setNewName("");
+  } catch (err) {
+    console.error("Error creando nivel:", err);
+    // aquí puedes poner algún toast si quieres
+  }
+};
+
+  // --------- EDITAR INLINE / ELIMINAR ELEMENTOS ---------
+
   const startInlineEdit = (node: DriveNode) => {
     setEditingId(node.id);
     setEditingName(node.name);
@@ -235,26 +261,14 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     cancelInlineEdit();
   };
 
-  // --------- CLICK EN CONFIRMAR SEGÚN MODO ---------
-  const handleConfirmButton = () => {
-    if (mode === "topic") {
-      // en addTopic: Confirmar = crear carpeta/tema
-      if (isAdding) {
-        handleConfirmAdd();
-      }
-      return;
-    }
+  const handleDeleteNode = (node: DriveNode) => {
+    const ok = window.confirm(`¿Eliminar "${node.name}"?`);
+    if (!ok) return;
 
-    // modo "move": viejo comportamiento
-    if (selectedTarget) {
-      onMove(selectedTarget);
-    }
+    setNodes((prev) => prev.filter((n) => n.id !== node.id));
   };
 
-  const isConfirmDisabled =
-    mode === "topic"
-      ? !isAdding || newName.trim() === ""
-      : !selectedTarget;
+  // ------------------------------------------
 
   return createPortal(
     <div
@@ -270,11 +284,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
         {/* Header */}
         <div className="px-5 py-3 border-b flex items-center justify-between">
           <div className="text-sm text-gray-600">
-            <div className="font-medium text-gray-900">
-              {mode === "topic"
-                ? `Selecciona donde crear el tema`
-                : `Nombre del archivo “${itemName}”`}
-            </div>
+            <div className="font-medium text-gray-900">Nombre del archivo “{itemName}”</div>
             <div className="flex items-center gap-1">
               <span className="text-xs text-gray-500">Ruta Actual:</span>
               <span className="text-xs font-medium">{currentLocationLabel}</span>
@@ -324,9 +334,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
                         ? "cursor-pointer hover:bg-gray-50"
                         : "cursor-default opacity-90"
                     }`}
-                    onClick={() =>
-                      n.type === "folder" && !isEditing ? enterFolder(n) : undefined
-                    }
+                    onClick={() => (n.type === "folder" && !isEditing ? enterFolder(n) : undefined)}
                     title={n.type === "file" ? "Archivo" : "Carpeta"}
                   >
                     {n.type === "folder" ? (
@@ -335,6 +343,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
                       <FileIcon size={18} className="text-gray-500" />
                     )}
 
+                    {/* Nombre o input de edición */}
                     {isEditing ? (
                       <input
                         className="flex-1 border rounded px-2 py-1 text-sm"
@@ -356,26 +365,57 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
                       <span className="flex-1 text-sm truncate">{n.name}</span>
                     )}
 
-                    {mode === "topic" && n.type === "folder" && !isEditing && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startInlineEdit(n);
-                        }}
-                        className="p-1 rounded hover:bg-gray-100"
-                        title="Modificar"
-                      >
-                        <Pencil size={16} className="text-gray-600" />
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {n.type === "folder" && !isEditing && (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startInlineEdit(n);
+                            }}
+                            className="p-1 rounded hover:bg-gray-100"
+                            title="Modificar"
+                          >
+                            <Pencil size={16} className="text-gray-600" />
+                          </button>
+                         
+                       </>
+                      )}
+
+                      {n.type === "folder" && isEditing && (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              confirmInlineEdit();
+                            }}
+                            className="px-2 py-1 text-xs rounded bg-green-600 text-white hover:bg-green-700"
+                          >
+                            Guardar
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelInlineEdit();
+                            }}
+                            className="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-50"
+                          >
+                            Cancelar
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </li>
                 );
               })}
             </ul>
           )}
 
-          {/* Input para nuevo elemento (solo en "topic") */}
-          {mode === "topic" && isAdding && !isFileLevel && (
+
+
+
+          {/* Input para nuevo elemento con GUARDAR (verde) y CANCELAR */}
+          {isAdding && !isFileLevel && (
             <div className="mt-3 flex items-center gap-2">
               <input
                 autoFocus
@@ -405,38 +445,25 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
             </div>
           )}
 
-          {/* Botón Agregar (solo en "topic") */}
-          {mode === "topic" && (
-            <div className="mt-4">
-              <button
-                onClick={handleStartAdd}
-                disabled={disableAdd}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-white ${
-                  disableAdd ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
-                }`}
-              >
-                <Plus size={20} />
-                Agregar
-              </button>
-            </div>
-          )}
+          
+
+          {/* Botón Agregar */}
+          <div className="mt-4">
+            <button
+              onClick={handleStartAdd}
+              disabled={disableAdd}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-white ${
+                disableAdd ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+              }`}
+            >
+              <Plus size={20} />
+              Agregar
+            </button>
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="px-5 py-3 border-t flex items-center justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded border hover:bg-gray-50">
-            Cancelar
-          </button>
-          <button
-            onClick={handleConfirmButton}
-            disabled={isConfirmDisabled}
-            className={`px-4 py-2 text-sm rounded text-white ${
-              !isConfirmDisabled ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-300 cursor-not-allowed"
-            }`}
-          >
-            Confirmar
-          </button>
-        </div>
+        {/* Footer vacío */}
+        <div className="px-5 py-3 border-t flex items-center justify-end gap-2" />
       </div>
     </div>,
     document.body
@@ -479,3 +506,4 @@ const Breadcrumb: React.FC<{
     </div>
   );
 };
+

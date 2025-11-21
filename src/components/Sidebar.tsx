@@ -31,7 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
           }`}
         >
           <FileText className="w-5 h-5 mr-3" />
-          Temas
+          Todos los Articulos
         </button>
         
         <button
@@ -41,7 +41,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
           }`}
         >
           <Plus className="w-5 h-5 mr-3" />
-          Añadir
+          Añadir Articulos
         </button>
 
         <button
@@ -51,7 +51,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
           }`}
         >
           <Plus className="w-5 h-5 mr-3" />
-          Añadir temas
+          Añadir Sección
         </button>
       </nav>
     </div>

@@ -236,6 +236,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         starred: false,
       }));
 
+      console.log("childrenAsFolders",childrenAsFolders)
+
       if (childrenAsFolders.length > 0) return childrenAsFolders;
 
       const resArticles = await fetch(`${apiUrl}/articles/${rawId}`);
@@ -247,6 +249,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         type: 'file',
         starred: false,
       }));
+
+      console.log("asFiles",childrenAsFolders)
+
 
       return asFiles;
     } catch (err) {
@@ -511,7 +516,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       </div>
 
       {/* Modal “Mover a…” */}
-      <ModalMoveDialog
+       <ModalMoveDialog
+        mode={activeView === 'addTopic' ? 'topic' : 'move'}   // 👈 ESTE PROP NUEVO
         isOpen={open}
         itemName={pendingArticle?.tema ?? 'Nuevo artículo'}
         onClose={() => {
