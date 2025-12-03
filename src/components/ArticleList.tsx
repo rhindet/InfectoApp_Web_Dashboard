@@ -52,6 +52,12 @@ const ArticleList: React.FC<ArticleListProps> = ({
     }
   }, [idCounts]);
 
+
+  
+  const fechaMX  = (fechaMongo) => new Date(fechaMongo).toLocaleString("es-MX", {
+  timeZone: "America/Mexico_City"
+   });
+
   return (
     <div className="bg-white rounded-lg shadow-sm border">
       {/* Header */}
@@ -137,10 +143,10 @@ const ArticleList: React.FC<ArticleListProps> = ({
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {"fecha de creacion"}
+                      {fechaMX(article.fecha_creacion)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {"fecha de modificacion"}
+                     {fechaMX(article.fecha_modificacion)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center gap-2">

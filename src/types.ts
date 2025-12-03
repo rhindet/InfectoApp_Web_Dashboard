@@ -9,8 +9,8 @@ export interface Article {
   ref_tabla_nivel2?: string | null;
   ref_tabla_nivel3?: string | null; 
 
-  fecha_creacion?: Date | null;     
-  fecha_modificacion?: Date | null; 
+  fecha_creacion?: string | null;     
+  fecha_modificacion?: string | null; 
 } 
 export interface User {
   username: string;

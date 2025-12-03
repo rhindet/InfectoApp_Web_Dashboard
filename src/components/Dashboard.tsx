@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, LogOut } from 'lucide-react';
 import Sidebar from './Sidebar';
 import ArticleList from './ArticleList';
@@ -16,38 +16,6 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-/** --------- CACHÉ LOCAL --------- */
-const CACHE_KEY = 'infecto_articles_cache_v1';
-
-function loadCache(): Article[] {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveCache(list: Article[]) {
-  try {
-    if (Array.isArray(list) && list.length > 0) {
-      localStorage.setItem(CACHE_KEY, JSON.stringify(list));
-    }
-    // si viene vacío, no lo guardamos para no “pisar” la caché previa buena
-  } catch {}
-}
-
-function removeFromCache(id: string) {
-  const current = loadCache();
-  const filtered = current.filter(a => a._id !== id);
-  if (filtered.length > 0) {
-    saveCache(filtered);
-  }
-  return filtered;
-}
-
 /** Modal de éxito */
 const SuccessModal: React.FC<{
   open: boolean;
@@ -55,7 +23,13 @@ const SuccessModal: React.FC<{
   message?: string;
   onClose: () => void;
   autoCloseMs?: number;
-}> = ({ open, title = "¡Artículo creado!", message = "Se guardó correctamente en la ubicación seleccionada.", onClose, autoCloseMs = 5000 }) => {
+}> = ({
+  open,
+  title = '¡Artículo creado!',
+  message = 'Se guardó correctamente en la ubicación seleccionada.',
+  onClose,
+  autoCloseMs = 5000,
+}) => {
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(onClose, autoCloseMs);
@@ -133,55 +107,33 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   // Modal de éxito
   const [successOpen, setSuccessOpen] = useState(false);
 
-  // Flags de control
-  const hasFetchedRef = useRef(false);
-  const didMountRef = useRef(false);
+  const apiUrl = import.meta.env.VITE_API_URL;
 
-  // Persistir en caché cuando cambien los artículos (solo si hay datos y no es el primer render)
-  useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return;
+  /** --------- CARGA DE ARTÍCULOS (SIEMPRE DESDE API) --------- */
+  const fetchArticles = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${apiUrl}/articles`);
+      const json = await res.json();
+      console.log('Todos los articulos', json);
+      setArticles(json);
+    } catch (err) {
+      console.error('Error cargando artículos:', err);
+    } finally {
+      setLoading(false);
     }
-    if (articles.length > 0) {
-      saveCache(articles);
-    }
-  }, [articles]);
+  }, [apiUrl]);
 
-  // Carga inicial (con caché)
+  // Carga inicial
   useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL;
-
-    const fetchArticlesFirstTime = async () => {
-      try {
-        // 1) Intentar desde caché
-        const cached = loadCache();
-        if (cached.length > 0) {
-          setArticles(cached);
-          setLoading(false);
-          return; // No llamar a la API si ya hay caché
-        }
-
-        // 2) Si no hay caché y tampoco hemos pedido en esta sesión, pedir a la API
-        if (!hasFetchedRef.current) {
-          const res = await fetch(`${apiUrl}/articles`);
-          const json = await res.json();
-          setArticles(json);
-          saveCache(json);       // Guardar en caché si trajo datos
-          hasFetchedRef.current = true;
-        }
-      } catch (err) {
-        console.error('Error cargando artículos:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     const getTemas = async () => {
       try {
         const res = await fetch(`${apiUrl}/nivelesScraping/niveles/temas`);
         const json = await res.json();
-        const opts0: Option[] = (json?.[0] ?? []).map((it: any) => ({ value: it._id, label: it.nombre }));
+        const opts0: Option[] = (json?.[0] ?? []).map((it: any) => ({
+          value: it._id,
+          label: it.nombre,
+        }));
         setDd1Options(opts0);
       } catch (e) {
         console.error('Error cargando temas:', e);
@@ -189,14 +141,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     };
 
     getTemas();
-    fetchArticlesFirstTime();
-  }, []);
+    fetchArticles();
+  }, [apiUrl, fetchArticles]);
 
   // Utils
   const optionToFolder = (levelPrefix: string) => (opt: Option, index?: number): DriveNode => ({
     id: `${levelPrefix}:${opt.value}`,
     name: opt.label,
-    type: "folder",
+    type: 'folder',
     starred: index !== undefined ? index % 3 === 0 : false,
   });
 
@@ -213,56 +165,60 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
    * - click carpeta => hijos por API /nivelesScraping/:id/:nextLevel
    * - si no hay hijos => /articles/:id (id = última carpeta) y se muestran como archivos (file)
    */
-  const loadChildren = useCallback(async (parentId: string | null): Promise<DriveNode[]> => {
-    const apiUrl = import.meta.env.VITE_API_URL;
+  const loadChildren = useCallback(
+    async (parentId: string | null): Promise<DriveNode[]> => {
+      if (parentId === null) {
+        return dd1Options.map(optionToFolder('L0'));
+      }
 
-    if (parentId === null) {
-      return dd1Options.map(optionToFolder('L0'));
-    }
+      const { level, rawId } = parseFullId(parentId);
+      if (level === null || !rawId) return [];
 
-    const { level, rawId } = parseFullId(parentId);
-    if (level === null || !rawId) return [];
+      const nextLevel = level + 1;
 
-    const nextLevel = level + 1;
+      try {
+        const res = await fetch(`${apiUrl}/nivelesScraping/${rawId}/${nextLevel}`);
+        const json = await res.json();
 
-    try {
-      const res = await fetch(`${apiUrl}/nivelesScraping/${rawId}/${nextLevel}`);
-      const json = await res.json();
+        const childrenAsFolders: DriveNode[] = (Array.isArray(json) ? json : []).map(
+          (it: any) => ({
+            id: `L${nextLevel}:${it._id}`,
+            name: it.nombre ?? 'Sin nombre',
+            type: 'folder',
+            starred: false,
+          }),
+        );
 
-      const childrenAsFolders: DriveNode[] = (Array.isArray(json) ? json : []).map((it: any) => ({
-        id: `L${nextLevel}:${it._id}`,
-        name: it.nombre ?? 'Sin nombre',
-        type: 'folder',
-        starred: false,
-      }));
+        console.log('childrenAsFolders', childrenAsFolders);
 
-      console.log("childrenAsFolders",childrenAsFolders)
+        if (childrenAsFolders.length > 0) return childrenAsFolders;
 
-      if (childrenAsFolders.length > 0) return childrenAsFolders;
+        const resArticles = await fetch(`${apiUrl}/articles/${rawId}`);
+        const arts = await resArticles.json();
 
-      const resArticles = await fetch(`${apiUrl}/articles/${rawId}`);
-      const arts = await resArticles.json();
+        const asFiles: DriveNode[] = (Array.isArray(arts) ? arts : []).map((a: Article) => ({
+          id: `ART:${a._id ?? crypto.randomUUID()}`,
+          name: a.tema ?? '(sin título)',
+          type: 'file',
+          starred: false,
+        }));
 
-      const asFiles: DriveNode[] = (Array.isArray(arts) ? arts : []).map((a: Article) => ({
-        id: `ART:${a._id ?? crypto.randomUUID()}`,
-        name: a.tema ?? '(sin título)',
-        type: 'file',
-        starred: false,
-      }));
+        console.log('asFiles', asFiles);
 
-      console.log("asFiles",childrenAsFolders)
-
-
-      return asFiles;
-    } catch (err) {
-      console.error('Error cargando hijos/artículos:', err);
-      return [];
-    }
-  }, [dd1Options]);
+        return asFiles;
+      } catch (err) {
+        console.error('Error cargando hijos/artículos:', err);
+        return [];
+      }
+    },
+    [apiUrl, dd1Options],
+  );
 
   // Guardar (crear/editar) desde el editor (sin POST aún si es creación)
   const handleSaveArticle = async (data: {
-    _id?: string; tema: string; contenidos: string[];
+    _id?: string;
+    tema: string;
+    contenidos: string[];
     ref_tabla_nivel0?: string | null;
     ref_tabla_nivel1?: string | null;
     ref_tabla_nivel2?: string | null;
@@ -270,11 +226,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   }) => {
     if (data._id) {
       // Edición local (editor sin POST)
-      setArticles((prev) => {
-        const updated = prev.map((a) => (a._id === data._id ? { ...a, ...data, updatedAt: new Date().toISOString() } as any : a));
-        if (updated.length > 0) saveCache(updated);
-        return updated;
-      });
+      setArticles((prev) =>
+        prev.map((a) =>
+          a._id === data._id
+            ? ({ ...a, ...data, updatedAt: new Date().toISOString() } as any)
+            : a,
+        ),
+      );
       setActiveView('articles');
       setCurrentArticle(null);
       return;
@@ -284,19 +242,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   };
 
   const handleUpdateArticle = async (data: {
-    _id?: string; tema: string; contenidos: string[];
+    _id?: string;
+    tema: string;
+    contenidos: string[];
     ref_tabla_nivel0?: string | null;
     ref_tabla_nivel1?: string | null;
     ref_tabla_nivel2?: string | null;
     ref_tabla_nivel3?: string | null;
   }) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL;
-      const res = await fetch(`${apiUrl}/nivelesScraping/actualizarArticulo/${data._id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      const res = await fetch(
+        `${apiUrl}/nivelesScraping/actualizarArticulo/${data._id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        },
+      );
 
       if (!res.ok) {
         const txt = await res.text().catch(() => '');
@@ -304,11 +266,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       }
 
       const updated = await res.json();
-      setArticles(prev => {
-        const next = prev.map(a => (a._id === updated._id ? updated : a));
-        if (next.length > 0) saveCache(next);
-        return next;
-      });
+      setArticles((prev) => prev.map((a) => (a._id === updated._id ? updated : a)));
 
       resetToNewArticle();
       setSuccessOpen(true);
@@ -327,11 +285,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   };
 
   // Crear (POST) cuando eliges carpeta en el modal
-  const handleMoveTo = async (target: { fullId: string; level: number | null; rawId: string }) => {
+  const handleMoveTo = async (target: {
+    fullId: string;
+    level: number | null;
+    rawId: string;
+  }) => {
     if (!pendingArticle || saving) return;
 
     setSaving(true);
-    const apiUrl = import.meta.env.VITE_API_URL;
 
     const rawId = target.rawId;
     const newArticle: Article = {
@@ -357,11 +318,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
       const created: Article = await res.json();
 
-      setArticles((prev) => {
-        const next = [...prev, created];
-        if (next.length > 0) saveCache(next);
-        return next;
-      });
+      setArticles((prev) => [...prev, created]);
 
       setOpen(false);
       resetToNewArticle();
@@ -383,17 +340,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     setActiveView('view');
   };
 
-  // Eliminar (optimista)
+  // Eliminar (optimista, sin caché)
   const handleDeleteArticle = async (id: string) => {
-    const apiUrl = import.meta.env.VITE_API_URL;
-
     if (!window.confirm('¿Eliminar este artículo?')) return;
 
-    setArticles(prev => {
-      const next = prev.filter(a => a._id !== id);
-      if (next.length > 0) saveCache(next); // si queda vacío, NO guardamos []
-      return next;
-    });
+    const prevArticles = articles;
+    setArticles((prev) => prev.filter((a) => a._id !== id));
 
     try {
       const res = await fetch(`${apiUrl}/articles/delete/${id}`, {
@@ -408,9 +360,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
       setSuccessOpen(true);
     } catch (e) {
-      console.error('Error eliminando artículo (revirtiendo caché):', e);
-      const cached = loadCache();
-      if (cached.length > 0) setArticles(cached);
+      console.error('Error eliminando artículo, revirtiendo:', e);
+      setArticles(prevArticles);
     }
   };
 
@@ -483,12 +434,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           } else if (view === 'addTopic') {
             setActiveView('addTopic');
           } else if (view === 'articles') {
-            // NO sobrescribas con caché vacía
-            if (articles.length === 0) {
-              const cached = loadCache();
-              if (cached.length > 0) setArticles(cached);
-            }
             setActiveView('articles');
+            // cada vez que vuelves a "Artículos", recarga desde la API
+            fetchArticles();
           }
         }}
       />
@@ -497,9 +445,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         {/* Top Bar */}
         <div className="bg-white border-b px-6 py-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold text-gray-800">Dashboard de Investigación</h1>
+            <h1 className="text-2xl font-semibold text-gray-800">
+              Dashboard de Investigación
+            </h1>
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">Bienvenido, {user.username}</span>
+              <span className="text-sm text-gray-600">
+                Bienvenido, {user.username}
+              </span>
               <button
                 onClick={onLogout}
                 className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
@@ -512,12 +464,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 p-6">{loading ? 'Cargando…' : renderContent()}</div>
+        <div className="flex-1 p-6">
+          {loading ? 'Cargando…' : renderContent()}
+        </div>
       </div>
 
       {/* Modal “Mover a…” */}
-       <ModalMoveDialog
-        mode={activeView === 'addTopic' ? 'topic' : 'move'}   // 👈 ESTE PROP NUEVO
+      <ModalMoveDialog
+        mode={activeView === 'addTopic' ? 'topic' : 'move'} // 👈 sigue igual
         isOpen={open}
         itemName={pendingArticle?.tema ?? 'Nuevo artículo'}
         onClose={() => {
@@ -536,7 +490,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
         open={successOpen}
         onClose={() => setSuccessOpen(false)}
         title="¡Acción exitosa!"
-        message="Cambios aplicados y sincronizados con la caché local."
+        message="Cambios aplicados correctamente."
       />
     </div>
   );

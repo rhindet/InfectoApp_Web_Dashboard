@@ -24,7 +24,7 @@ type LoadChildren = (parentId: NodeId | null) => Promise<DriveNode[]>;
 type ModalMode = "topic" | "move";
 
 type ModalMoveDialogProps = {
-  mode: ModalMode; // 👈 NUEVO: "topic" (crear tema) o "move" (mover artículo)
+  mode: ModalMode; 
   isOpen: boolean;
   itemName: string;
   currentLocationLabel?: string;
