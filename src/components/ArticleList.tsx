@@ -17,15 +17,8 @@ const ArticleList: React.FC<ArticleListProps> = ({
   onView,
   onAdd
 }) => {
-
-  const formatDate = (dateString: string) =>
-    new Date(dateString).toLocaleDateString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  // ✅ Search state
+  const [search, setSearch] = React.useState('');
 
   // 1) Conteo de IDs
   const idCounts = React.useMemo(() => {
@@ -34,35 +27,66 @@ const ArticleList: React.FC<ArticleListProps> = ({
     return m;
   }, [articles]);
 
-
+  // Orden por tema
   const sortedArticles = React.useMemo(() => {
     return [...articles].sort((a, b) =>
-      (a.tema || "").localeCompare(b.tema || "", "es", { sensitivity: "base" })
+      (a.tema || '').localeCompare(b.tema || '', 'es', { sensitivity: 'base' })
     );
   }, [articles]);
 
+  // ✅ Función normalizadora para búsqueda (acentos/case-insensitive)
+  const normalize = (s: string) =>
+    (s ?? '')
+      .toString()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
 
-  // 2) Log de duplicados (opcional)
+  // ✅ Filtrado por búsqueda
+  const filteredArticles = React.useMemo(() => {
+    const q = normalize(search);
+    if (!q) return sortedArticles;
+
+    return sortedArticles.filter((a) => {
+      // Aquí decides qué campos se buscan:
+      const haystack = [
+        a.tema,
+        a._id,
+        // agrega más si quieres:
+        // (a as any).subtema,
+        // (a as any).contenido,
+      ]
+        .filter(Boolean)
+        .map((x) => normalize(String(x)))
+        .join(' | ');
+
+      return haystack.includes(q);
+    });
+  }, [search, sortedArticles]);
+
+  // Log de duplicados (opcional)
   React.useEffect(() => {
     const dups = Object.entries(idCounts)
       .filter(([, c]) => c > 1)
       .map(([id]) => id);
-    if (dups.length) {
-      console.warn('IDs duplicados:', dups);
-    }
+    if (dups.length) console.warn('IDs duplicados:', dups);
   }, [idCounts]);
 
-
-  
-  const fechaMX  = (fechaMongo) => new Date(fechaMongo).toLocaleString("es-MX", {
-  timeZone: "America/Mexico_City"
-   });
+  const fechaMX = (fechaMongo: any) =>
+    new Date(fechaMongo).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
       {/* Header */}
       <div className="flex items-center justify-between p-6 border-b">
-        <h2 className="text-xl font-semibold text-gray-800">Gestión de Temas</h2>
+        <div>
+          <h2 className="text-xl font-semibold text-gray-800">Gestión de Temas</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Mostrando {filteredArticles.length} de {articles.length}
+          </p>
+        </div>
+
         <button
           onClick={onAdd}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
@@ -76,7 +100,9 @@ const ArticleList: React.FC<ArticleListProps> = ({
       <div className="p-6 border-b">
         <input
           type="text"
-          placeholder="Buscar..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar por tema o ID..."
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
         />
       </div>
@@ -103,27 +129,45 @@ const ArticleList: React.FC<ArticleListProps> = ({
               </th>
             </tr>
           </thead>
+
           <tbody className="bg-white divide-y divide-gray-200">
-            {articles.length === 0 ? (
+            {filteredArticles.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
                   <div className="flex flex-col items-center">
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                      <div className="text-gray-400 text-2xl">📄</div>
+                      <div className="text-gray-400 text-2xl">🔎</div>
                     </div>
-                    <p className="text-lg font-medium mb-2">No hay artículos</p>
-                    <p className="text-sm text-gray-400 mb-4">Comienza creando tu primer artículo</p>
-                    <button
-                      onClick={onAdd}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Crear Artículo
-                    </button>
+                    {search.trim() ? (
+                      <>
+                        <p className="text-lg font-medium mb-2">Sin resultados</p>
+                        <p className="text-sm text-gray-400">
+                          No hay coincidencias para “{search}”
+                        </p>
+                        <button
+                          onClick={() => setSearch('')}
+                          className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                        >
+                          Limpiar búsqueda
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-lg font-medium mb-2">No hay artículos</p>
+                        <p className="text-sm text-gray-400 mb-4">Comienza creando tu primer artículo</p>
+                        <button
+                          onClick={onAdd}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Crear Artículo
+                        </button>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>
             ) : (
-              sortedArticles.map((article) => {
+              filteredArticles.map((article) => {
                 const isDup = idCounts[article._id] > 1;
                 return (
                   <tr key={article._id} className="hover:bg-gray-50">
@@ -135,19 +179,20 @@ const ArticleList: React.FC<ArticleListProps> = ({
                         </span>
                       )}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{article.tema}</div>
-                      <div className="text-sm text-gray-500">
-                        {"Contenidos"}
+                      <div className="text-sm text-gray-500">Contenidos</div>
+                    </td>
 
-                      </div>
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {fechaMX(article.fecha_creacion)}
+                      {fechaMX((article as any).fecha_creacion)}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                     {fechaMX(article.fecha_modificacion)}
+                      {fechaMX((article as any).fecha_modificacion)}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center gap-2">
                         <button
@@ -157,6 +202,7 @@ const ArticleList: React.FC<ArticleListProps> = ({
                         >
                           <Eye className="w-4 h-4" />
                         </button>
+
                         <button
                           onClick={() => onEdit(article)}
                           className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
@@ -164,6 +210,7 @@ const ArticleList: React.FC<ArticleListProps> = ({
                         >
                           <Edit className="w-4 h-4" />
                         </button>
+
                         <button
                           onClick={() => onDelete(article._id)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -184,4 +231,4 @@ const ArticleList: React.FC<ArticleListProps> = ({
   );
 };
 
-export default ArticleList; 
+export default ArticleList;
