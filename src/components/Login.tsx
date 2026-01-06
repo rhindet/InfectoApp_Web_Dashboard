@@ -1,105 +1,142 @@
-import React, { useState } from 'react';
-import { User, Lock } from 'lucide-react';
+import React, { useState } from "react";
+import { User, Lock } from "lucide-react";
 
 interface LoginProps {
   onLogin: (username: string, password: string) => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (username && password) {
-      setIsLoading(true);
-      // Simulate API call
-      setTimeout(() => {
-        onLogin(username, password);
-        setIsLoading(false);
-      }, 1000);
-    }
+    if (!username || !password) return;
+
+    setIsLoading(true);
+    setTimeout(() => {
+      onLogin(username, password);
+      setIsLoading(false);
+    }, 900);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex">
-      {/* Medical Image Section */}
-      <div className="hidden lg:flex lg:w-1/2 relative">
-        <img
-          src="https://images.pexels.com/photos/4167544/pexels-photo-4167544.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1"
-          alt="Medical professional"
-          className="w-full h-full object-cover"
-        />
-        <div className="absolute inset-0 bg-blue-600 bg-opacity-20"></div>
-      </div>
+    <div className="min-h-dvh bg-gradient-to-br from-blue-50 via-white to-blue-100">
+      <div className="min-h-dvh grid lg:grid-cols-2">
+        {/* LEFT IMAGE (desktop only) */}
+        <div className="hidden lg:block relative overflow-hidden">
+          <img
+            src="https://images.pexels.com/photos/4167544/pexels-photo-4167544.jpeg?auto=compress&cs=tinysrgb&w=1600&h=1200"
+            alt="Medical"
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-blue-900/40" />
 
-      {/* Login Form Section */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
-        <div className="w-full max-w-md">
-          {/* Logo */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4">
-              <div className="text-white font-bold text-xl">IN</div>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-800">INFECTOLOGÍA</h1>
-            <p className="text-gray-600 mt-2">Gestión de Investigación</p>
-          </div>
-
-          {/* Welcome Message */}
-          <div className="text-center mb-8">
-            <h2 className="text-xl font-semibold text-gray-800 mb-2">Hola, Bienvenido</h2>
-            <p className="text-gray-600">Por favor introduce usuario y contraseña</p>
-          </div>
-
-          {/* Login Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-4">
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="text"
-                  placeholder="USUARIO"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200 placeholder-gray-500"
-                  required
-                />
+          {/* Branding */}
+          <div className="relative z-10 h-full flex flex-col justify-between p-10 text-white">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-full bg-white text-blue-700 font-black text-xl grid place-items-center shadow">
+                IN
               </div>
-
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="password"
-                  placeholder="CONTRASEÑA"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200 placeholder-gray-500"
-                  required
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading || !username || !password}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <div className="flex items-center justify-center">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                  Iniciando sesión...
+              <div>
+                <div className="text-xl font-bold tracking-wide">
+                  INFECTOLOGÍA
                 </div>
-              ) : (
-                'Iniciar sesión'
-              )}
-            </button>
-          </form>
+                <div className="text-sm text-white/80">
+                  Gestión de Investigación
+                </div>
+              </div>
+            </div>
 
-          {/* Demo Credentials */}
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <p className="text-sm text-gray-600 text-center">
-              <strong>Demo:</strong> Usuario: admin / Contraseña: admin
+            <div className="max-w-md">
+              <h2 className="text-4xl font-semibold leading-tight">
+                Panel de gestión científica
+              </h2>
+              <p className="mt-4 text-white/80">
+                Organiza artículos, temas y contenido de investigación clínica
+                de forma centralizada.
+              </p>
+            </div>
+
+            <div className="text-sm text-white/70">
+              © {new Date().getFullYear()} Infectología
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT FORM */}
+        <div className="flex items-center justify-center px-4 py-10">
+          <div className="w-full max-w-md">
+            {/* Branding (mobile + desktop form) */}
+            <div className="flex flex-col items-center mb-8">
+              <div className="w-16 h-16 rounded-full bg-blue-600 text-white font-black text-xl grid place-items-center shadow">
+                IN
+              </div>
+              <h1 className="mt-4 text-2xl font-bold text-gray-900">
+                INFECTOLOGÍA
+              </h1>
+              <p className="text-gray-600 text-sm">
+                Gestión de Investigación
+              </p>
+            </div>
+
+            {/* Card */}
+            <div className="bg-white/80 backdrop-blur border rounded-2xl shadow-sm p-6 sm:p-7">
+              <div className="text-center">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Bienvenido
+                </h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Inicia sesión para continuar
+                </p>
+              </div>
+
+              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                {/* Usuario */}
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    placeholder="Usuario"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    required
+                  />
+                </div>
+
+                {/* Contraseña */}
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="password"
+                    placeholder="Contraseña"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    required
+                  />
+                </div>
+
+                {/* Submit */}
+                <button
+                  type="submit"
+                  disabled={isLoading || !username || !password}
+                  className="w-full bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                  {isLoading ? "Iniciando sesión..." : "Iniciar sesión"}
+                </button>
+              </form>
+
+              {/* Demo */}
+              <div className="mt-6 text-center text-sm text-gray-600 bg-gray-50 rounded-xl p-3">
+                <strong>Demo:</strong> admin / admin
+              </div>
+            </div>
+
+            <p className="mt-6 text-center text-xs text-gray-500 lg:hidden">
+              © {new Date().getFullYear()} Infectología
             </p>
           </div>
         </div>
