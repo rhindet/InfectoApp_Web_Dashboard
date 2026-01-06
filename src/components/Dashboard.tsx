@@ -481,7 +481,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           }
         }}
         onMove={handleMoveTo}
-        loadChildren={loadChildren}
         rootId={null}
       />
 

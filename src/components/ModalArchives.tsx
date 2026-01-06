@@ -24,14 +24,31 @@ type LoadChildren = (parentId: NodeId | null) => Promise<DriveNode[]>;
 type ModalMode = "topic" | "move";
 
 type ModalMoveDialogProps = {
-  mode: ModalMode; 
+  mode: ModalMode;
   isOpen: boolean;
   itemName: string;
   currentLocationLabel?: string;
   onClose: () => void;
   onMove: (target: { fullId: NodeId; level: number | null; rawId: string }) => void;
-  loadChildren: LoadChildren;
   rootId?: NodeId | null;
+};
+
+type Option = { value: string; label: string };
+
+const optionToFolder =
+  (levelPrefix: string) =>
+  (opt: Option, index?: number): DriveNode => ({
+    id: `${levelPrefix}:${opt.value}`,
+    name: opt.label,
+    type: "folder",
+    starred: index !== undefined ? index % 3 === 0 : false,
+  });
+
+const parseFullId = (fullId: string) => {
+  const [prefix, rawId] = fullId.split(":");
+  const m = /^L(\d+)$/.exec(prefix ?? "");
+  const level = m ? Number(m[1]) : null;
+  return { level, rawId: rawId ?? "" };
 };
 
 export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
@@ -41,7 +58,6 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
   currentLocationLabel = "Mis Articulos",
   onClose,
   onMove,
-  loadChildren,
   rootId = null,
 }) => {
   const [path, setPath] = useState<{ id: NodeId | null; name: string }[]>([]);
@@ -97,21 +113,78 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     return { level, id: raw ?? "", fullId };
   };
 
+   const apiUrl = import.meta.env.VITE_API_URL;
 
-  // Carga de hijos al cambiar la ubicación actual
-  useEffect(() => {
-    if (!isOpen) return;
-    setLoading(true);
-    setSelectedTarget(null);
-    setEditingId(null);
-    setEditingName("");
-    setIsAdding(false);
-    setNewName("");
+const loadChildren = async (parentId: string | null): Promise<DriveNode[]> => {
+  // ROOT: siempre pedir al backend (no usar dd1Options)
+  if (parentId === null) {
+    const res = await fetch(`${apiUrl}/nivelesScraping/niveles/temas`);
+    const json = await res.json();
+    const opts0: Option[] = (json?.[0] ?? []).map((it: any) => ({
+      value: it._id,
+      label: it.nombre,
+    }));
+    return opts0.map(optionToFolder("L0"));
+  }
 
-    loadChildren(currentParentId ?? null)
-      .then((items) => setNodes(items))
-      .finally(() => setLoading(false));
-  }, [isOpen, currentParentId, loadChildren]);
+  const { level, rawId } = parseFullId(parentId);
+  if (level === null || !rawId) return [];
+
+  const nextLevel = level + 1;
+
+  // hijos folders
+  const res = await fetch(`${apiUrl}/nivelesScraping/${rawId}/${nextLevel}`);
+  const json = await res.json();
+
+  const childrenAsFolders: DriveNode[] = (Array.isArray(json) ? json : []).map((it: any) => ({
+    id: `L${nextLevel}:${it._id}`,
+    name: it.nombre ?? "Sin nombre",
+    type: "folder",
+    starred: false,
+  }));
+
+  if (childrenAsFolders.length > 0) return childrenAsFolders;
+
+  // si no hay folders => artículos
+  const resArticles = await fetch(`${apiUrl}/articles/${rawId}`);
+  const arts = await resArticles.json();
+
+  const asFiles: DriveNode[] = (Array.isArray(arts) ? arts : []).map((a: any) => ({
+    id: `ART:${a._id ?? crypto.randomUUID()}`,
+    name: a.tema ?? "(sin título)",
+    type: "file",
+    starred: false,
+  }));
+
+  return asFiles;
+};
+
+
+const reload = React.useCallback(async () => {
+  if (!isOpen) return;
+  setLoading(true);
+  try {
+    const items = await loadChildren(currentParentId ?? null);
+    setNodes(items);
+  } catch (e) {
+    console.error("Error cargando items:", e);
+    setNodes([]);
+  } finally {
+    setLoading(false);
+  }
+}, [isOpen, currentParentId]);
+
+useEffect(() => {
+  if (!isOpen) return;
+
+  setSelectedTarget(null);
+  setEditingId(null);
+  setEditingName("");
+  setIsAdding(false);
+  setNewName("");
+
+  void reload();
+}, [isOpen, currentParentId]);
 
   // Reset al cerrar
   useEffect(() => {
@@ -169,12 +242,13 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
   };
 
   // --------- AGREGAR NUEVO ELEMENTO (modo "topic") ---------
-  const handleStartAdd = () => {
-    if (mode !== "topic") return; // solo en addTopic
-    if (disableAdd) return;
-    setIsAdding(true);
-    setNewName("");
-  };
+  const handleStartAdd = async () => {
+  if (mode !== "topic") return;
+  if (disableAdd) return;
+
+  setIsAdding(true);
+  setNewName("");
+};
 
   const handleCancelAdd = () => {
     setIsAdding(false);
@@ -227,9 +301,9 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
         type: "folder",
       };
 
-      setNodes((prev) => [...prev, newNode]);
       setIsAdding(false);
-      setNewName("");
+setNewName("");
+await reload(); // ✅ estado real del backend
     } catch (err) {
       console.error("Error creando nivel:", err);
     }
@@ -246,43 +320,28 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
     setEditingName("");
   };
 
-  const confirmInlineEdit = async (id, level) => {
-    const name = editingName.trim();
-    if (!name || !editingId) {
-      cancelInlineEdit();
-      return;
+  const confirmInlineEdit = async (id: string, level: number | null) => {
+  const name = editingName.trim();
+  if (!name || !editingId) return;
+
+  try {
+    const res = await fetch(`${apiUrl}/nivelesScraping/actualizarThema/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level, name }),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status} ${txt}`);
     }
 
-    const data = {
-      level,
-      name
-    }
-
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL;
-      const res = await fetch(`${apiUrl}/nivelesScraping/actualizarThema/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status} ${txt}`);
-      }
-
-      const updated = await res.json();
-      console.log(updated)
-
-    } catch (e) {
-      console.log("error")
-    }
-
-    setNodes((prev) =>
-      prev.map((n) => (n.id === editingId ? { ...n, name } : n))
-    );
-    cancelInlineEdit();
-  };
+    await reload();          // ✅ aquí recargas lista real
+    cancelInlineEdit();      // ✅ cierras input
+  } catch (e) {
+    console.error("Error actualizando tema:", e);
+  }
+};
 
   // --------- CLICK EN CONFIRMAR SEGÚN MODO ---------
   const handleConfirmButton = () => {
@@ -461,7 +520,7 @@ export const ModalMoveDialog: React.FC<ModalMoveDialogProps> = ({
           {mode === "topic" && (
             <div className="mt-4">
               <button
-                onClick={handleStartAdd}
+                onClick={() => void handleStartAdd()}
                 disabled={disableAdd}
                 className={`flex items-center gap-2 px-4 py-2 rounded-full text-white ${disableAdd ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
                   }`}
