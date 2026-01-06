@@ -1,6 +1,6 @@
-import React from 'react';
-import { Eye, Edit, Trash2, Plus } from 'lucide-react';
-import { Article } from '../types';
+import React from "react";
+import { Eye, Edit, Trash2, Plus } from "lucide-react";
+import { Article } from "../types";
 
 interface ArticleListProps {
   articles: Article[];
@@ -15,10 +15,10 @@ const ArticleList: React.FC<ArticleListProps> = ({
   onEdit,
   onDelete,
   onView,
-  onAdd
+  onAdd,
 }) => {
   // ✅ Search state
-  const [search, setSearch] = React.useState('');
+  const [search, setSearch] = React.useState("");
 
   // 1) Conteo de IDs
   const idCounts = React.useMemo(() => {
@@ -30,16 +30,16 @@ const ArticleList: React.FC<ArticleListProps> = ({
   // Orden por tema
   const sortedArticles = React.useMemo(() => {
     return [...articles].sort((a, b) =>
-      (a.tema || '').localeCompare(b.tema || '', 'es', { sensitivity: 'base' })
+      (a.tema || "").localeCompare(b.tema || "", "es", { sensitivity: "base" })
     );
   }, [articles]);
 
   // ✅ Función normalizadora para búsqueda (acentos/case-insensitive)
   const normalize = (s: string) =>
-    (s ?? '')
+    (s ?? "")
       .toString()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
       .trim();
 
@@ -49,17 +49,10 @@ const ArticleList: React.FC<ArticleListProps> = ({
     if (!q) return sortedArticles;
 
     return sortedArticles.filter((a) => {
-      // Aquí decides qué campos se buscan:
-      const haystack = [
-        a.tema,
-        a._id,
-        // agrega más si quieres:
-        // (a as any).subtema,
-        // (a as any).contenido,
-      ]
+      const haystack = [a.tema, a._id]
         .filter(Boolean)
         .map((x) => normalize(String(x)))
-        .join(' | ');
+        .join(" | ");
 
       return haystack.includes(q);
     });
@@ -70,18 +63,31 @@ const ArticleList: React.FC<ArticleListProps> = ({
     const dups = Object.entries(idCounts)
       .filter(([, c]) => c > 1)
       .map(([id]) => id);
-    if (dups.length) console.warn('IDs duplicados:', dups);
+    if (dups.length) console.warn("IDs duplicados:", dups);
   }, [idCounts]);
 
   const fechaMX = (fechaMongo: any) =>
-    new Date(fechaMongo).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+    fechaMongo
+      ? new Date(fechaMongo).toLocaleString("es-MX", {
+          timeZone: "America/Mexico_City",
+        })
+      : "—";
+
+  // Para mobile: mostrar solo final del id
+  const shortId = (id?: string) => {
+    if (!id) return "";
+    if (id.length <= 10) return id;
+    return `…${id.slice(-8)}`;
+  };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border">
+    <div className="bg-white rounded-lg shadow-sm border min-w-0">
       {/* Header */}
-      <div className="flex items-center justify-between p-6 border-b">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-800">Gestión de Temas</h2>
+      <div className="flex items-center justify-between p-6 border-b gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold text-gray-800">
+            Gestión de Temas
+          </h2>
           <p className="text-sm text-gray-500 mt-1">
             Mostrando {filteredArticles.length} de {articles.length}
           </p>
@@ -89,7 +95,7 @@ const ArticleList: React.FC<ArticleListProps> = ({
 
         <button
           onClick={onAdd}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 shrink-0"
         >
           <Plus className="w-4 h-4" />
           Nuevo Artículo
@@ -107,24 +113,32 @@ const ArticleList: React.FC<ArticleListProps> = ({
         />
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full">
+      {/* Table Wrapper: el scroll horizontal SOLO vive aquí */}
+      <div className="w-full overflow-x-auto">
+        {/* min-w: asegura que la tabla no se aplaste; en móvil habrá scroll interno si hace falta */}
+        <table className="w-full min-w-[860px] table-fixed">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              {/* ID */}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[240px]">
                 ID
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+
+              {/* Título */}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[380px]">
                 Título
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+
+              {/* Fechas: ocultas en pantallas chicas */}
+              <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[210px]">
                 Fecha creación
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[230px]">
                 Fecha actualización
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+
+              {/* Acciones */}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[160px]">
                 Acciones
               </th>
             </tr>
@@ -138,6 +152,7 @@ const ArticleList: React.FC<ArticleListProps> = ({
                     <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                       <div className="text-gray-400 text-2xl">🔎</div>
                     </div>
+
                     {search.trim() ? (
                       <>
                         <p className="text-lg font-medium mb-2">Sin resultados</p>
@@ -145,7 +160,7 @@ const ArticleList: React.FC<ArticleListProps> = ({
                           No hay coincidencias para “{search}”
                         </p>
                         <button
-                          onClick={() => setSearch('')}
+                          onClick={() => setSearch("")}
                           className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                         >
                           Limpiar búsqueda
@@ -154,7 +169,9 @@ const ArticleList: React.FC<ArticleListProps> = ({
                     ) : (
                       <>
                         <p className="text-lg font-medium mb-2">No hay artículos</p>
-                        <p className="text-sm text-gray-400 mb-4">Comienza creando tu primer artículo</p>
+                        <p className="text-sm text-gray-400 mb-4">
+                          Comienza creando tu primer artículo
+                        </p>
                         <button
                           onClick={onAdd}
                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -169,32 +186,54 @@ const ArticleList: React.FC<ArticleListProps> = ({
             ) : (
               filteredArticles.map((article) => {
                 const isDup = idCounts[article._id] > 1;
+
                 return (
                   <tr key={article._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {article._id}
-                      {isDup && (
-                        <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-800">
-                          Duplicado
+                    {/* ID */}
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {/* Mobile: corto | Desktop: completo */}
+                        <span className="font-mono whitespace-nowrap md:hidden">
+                          {shortId(article._id)}
                         </span>
-                      )}
+                        <span className="font-mono whitespace-nowrap hidden md:inline">
+                          {article._id}
+                        </span>
+
+                        {isDup && (
+                          <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-800 whitespace-nowrap">
+                            Duplicado
+                          </span>
+                        )}
+                      </div>
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{article.tema}</div>
-                      <div className="text-sm text-gray-500">Contenidos</div>
+                    {/* Título */}
+                    <td className="px-6 py-4">
+                      <div className="min-w-0">
+                        {/* truncate para que no rompa la tabla */}
+                        <div className="text-sm font-medium text-gray-900 truncate">
+                          {article.tema}
+                        </div>
+                        <div className="text-sm text-gray-500 truncate">
+                          Contenidos
+                        </div>
+                      </div>
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {/* Fecha creación (solo md+) */}
+                    <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
                       {fechaMX((article as any).fecha_creacion)}
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {/* Fecha actualización (solo md+) */}
+                    <td className="hidden md:table-cell px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
                       {fechaMX((article as any).fecha_modificacion)}
                     </td>
 
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center gap-2">
+                    {/* Acciones */}
+                    <td className="px-6 py-4 text-sm font-medium">
+                      <div className="flex items-center gap-2 whitespace-nowrap">
                         <button
                           onClick={() => onView(article)}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"

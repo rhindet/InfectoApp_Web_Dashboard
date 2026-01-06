@@ -418,81 +418,81 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar
-        activeView={
-          activeView === 'add' || activeView === 'edit'
-            ? 'add'
-            : activeView === 'addTopic'
-            ? 'addTopic'
-            : 'articles'
+  <div className="h-dvh bg-gray-50 overflow-hidden flex">
+    {/* Sidebar */}
+    <Sidebar
+      activeView={
+        activeView === "add" || activeView === "edit"
+          ? "add"
+          : activeView === "addTopic"
+          ? "addTopic"
+          : "articles"
+      }
+      onViewChange={(view) => {
+        if (view === "add") {
+          handleAddArticle();
+          setActiveView("add");
+        } else if (view === "addTopic") {
+          setActiveView("addTopic");
+        } else if (view === "articles") {
+          setActiveView("articles");
+          fetchArticles();
         }
-        onViewChange={(view) => {
-          if (view === 'add') {
-            handleAddArticle();
-            setActiveView('add');
-          } else if (view === 'addTopic') {
-            setActiveView('addTopic');
-          } else if (view === 'articles') {
-            setActiveView('articles');
-            // cada vez que vuelves a "Artículos", recarga desde la API
-            fetchArticles();
-          }
-        }}
-      />
+      }}
+    />
 
-      <div className="flex-1 flex flex-col">
-        {/* Top Bar */}
-        <div className="bg-white border-b px-6 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold text-gray-800">
-              Dashboard de Investigación
-            </h1>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">
-                Bienvenido, {user.username}
-              </span>
-              <button
-                onClick={onLogout}
-                className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-                Cerrar sesión
-              </button>
-            </div>
+    {/* Main */}
+    <div className="flex-1 min-w-0 flex flex-col">
+      {/* Top Bar (no scroll) */}
+      <div className="bg-white border-b px-6 py-4 shrink-0">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold text-gray-800">
+            Dashboard de Investigación
+          </h1>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-600">
+              Bienvenido, {user.username}
+            </span>
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Cerrar sesión
+            </button>
           </div>
-        </div>
-
-        {/* Main Content */}
-        <div className="flex-1 p-6">
-          {loading ? 'Cargando…' : renderContent()}
         </div>
       </div>
 
-      {/* Modal “Mover a…” */}
-      <ModalMoveDialog
-        mode={activeView === 'addTopic' ? 'topic' : 'move'} // 👈 sigue igual
-        isOpen={open}
-        itemName={pendingArticle?.tema ?? 'Nuevo artículo'}
-        onClose={() => {
-          if (!saving) {
-            setOpen(false);
-            setPendingArticle(null);
-          }
-        }}
-        onMove={handleMoveTo}
-        rootId={null}
-      />
-
-      {/* Modal de éxito */}
-      <SuccessModal
-        open={successOpen}
-        onClose={() => setSuccessOpen(false)}
-        title="¡Acción exitosa!"
-        message="Cambios aplicados correctamente."
-      />
+      {/* Content (solo aquí hay scroll) */}
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        {loading ? "Cargando…" : renderContent()}
+      </div>
     </div>
-  );
+
+    {/* Modals */}
+    <ModalMoveDialog
+      mode={activeView === "addTopic" ? "topic" : "move"}
+      isOpen={open}
+      itemName={pendingArticle?.tema ?? "Nuevo artículo"}
+      onClose={() => {
+        if (!saving) {
+          setOpen(false);
+          setPendingArticle(null);
+        }
+      }}
+      onMove={handleMoveTo}
+      rootId={null}
+    />
+
+    <SuccessModal
+      open={successOpen}
+      onClose={() => setSuccessOpen(false)}
+      title="¡Acción exitosa!"
+      message="Cambios aplicados correctamente."
+    />
+  </div>
+);
 };
 
 export default Dashboard;
