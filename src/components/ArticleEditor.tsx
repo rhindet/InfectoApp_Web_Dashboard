@@ -17,6 +17,10 @@ import {
   Smartphone,
   Crosshair,
   ChevronDown,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
 } from "lucide-react";
 import { Article } from "../types";
 
@@ -126,6 +130,57 @@ function closestFontSizeSpanFromSelection(root: HTMLElement): HTMLSpanElement | 
   return root.contains(hit) ? hit : null;
 }
 
+const BLOCK_TAGS = new Set(["P", "LI", "TD", "TH", "BLOCKQUOTE", "PRE"]);
+
+function getSelectedBlocks(range: Range, root: HTMLElement): HTMLElement[] {
+  const blocks = new Set<HTMLElement>();
+
+  const startEl =
+    (range.startContainer.nodeType === 1 ? (range.startContainer as Element) : range.startContainer.parentElement) as Element | null;
+  const endEl =
+    (range.endContainer.nodeType === 1 ? (range.endContainer as Element) : range.endContainer.parentElement) as Element | null;
+
+  if (!startEl || !endEl) return [];
+
+  const selector = Array.from(BLOCK_TAGS).join(",");
+  const startBlock = startEl.closest(selector) as HTMLElement | null;
+  const endBlock = endEl.closest(selector) as HTMLElement | null;
+
+  if (startBlock && root.contains(startBlock)) blocks.add(startBlock);
+  if (endBlock && root.contains(endBlock)) blocks.add(endBlock);
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
+    acceptNode(node) {
+      if (!(node instanceof HTMLElement)) return NodeFilter.FILTER_SKIP;
+      if (!BLOCK_TAGS.has(node.tagName)) return NodeFilter.FILTER_SKIP;
+
+      const r = document.createRange();
+      r.selectNodeContents(node);
+      const intersects =
+        range.compareBoundaryPoints(Range.END_TO_START, r) < 0 &&
+        range.compareBoundaryPoints(Range.START_TO_END, r) > 0;
+
+      return intersects ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+    },
+  });
+
+  while (walker.nextNode()) blocks.add(walker.currentNode as HTMLElement);
+
+  return Array.from(blocks);
+}
+
+// ✅ NEW: bloque actual desde selección (para alineación cuando no hay multi-bloque)
+function closestBlockFromSelection(root: HTMLElement): HTMLElement | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const node = sel.getRangeAt(0).startContainer;
+  const el = node.nodeType === 1 ? (node as Element) : node.parentElement;
+  if (!el) return null;
+
+  const selector = Array.from(BLOCK_TAGS).join(",");
+  const block = el.closest(selector) as HTMLElement | null;
+  return block && root.contains(block) ? block : null;
+}
 
 const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel, onUpdate }) => {
   const [title, setTitle] = useState<string>(article?.tema ?? "");
@@ -238,6 +293,11 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           currentP.appendChild(el);
         } else if (["DIV", "H1", "H2", "H3", "H4", "H5", "H6"].includes(tag)) {
           const p = document.createElement("p");
+
+          // ✅ NEW: preservar alineación
+          const ta = (el.style?.textAlign || "").trim();
+          if (ta) p.style.textAlign = ta;
+
           while (el.firstChild) p.appendChild(el.firstChild);
           root.replaceChild(p, el);
           currentP = null;
@@ -274,7 +334,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
     try {
       document.execCommand("defaultParagraphSeparator", false, "p");
-    } catch {}
+    } catch { }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [article]);
 
@@ -315,41 +375,41 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   }, [sizeMenuOpen]);
 
   const handleContentChange = () => {
-  normalizeTopLevelToParagraphs();
-  if (contentRef.current) {
-    cleanupAllFontSizeSpans(contentRef.current); // ✅ evita acumulación/nesting
-    setContent(contentRef.current.innerHTML);
+    normalizeTopLevelToParagraphs();
+    if (contentRef.current) {
+      cleanupAllFontSizeSpans(contentRef.current); // ✅ evita acumulación/nesting
+      setContent(contentRef.current.innerHTML);
+    }
+  };
+
+  function getSingleSelectedFontSizeSpan(range: Range, root: HTMLElement): HTMLSpanElement | null {
+    // Caso 1: selección exacta de un nodo <span style="font-size:...">
+    const a = range.startContainer;
+    const b = range.endContainer;
+
+    if (a === b && range.startContainer.nodeType === Node.ELEMENT_NODE) {
+      const el = range.startContainer as Element;
+      const child = el.childNodes[range.startOffset];
+      if (child instanceof HTMLSpanElement && isFontSizeSpan(child) && root.contains(child)) return child;
+    }
+
+    // Caso 2: selection dentro del mismo font-size span (aunque sea selection parcial)
+    const startEl = (range.startContainer.nodeType === 1 ? (range.startContainer as Element) : range.startContainer.parentElement) as
+      | Element
+      | null;
+    const endEl = (range.endContainer.nodeType === 1 ? (range.endContainer as Element) : range.endContainer.parentElement) as
+      | Element
+      | null;
+
+    if (!startEl || !endEl) return null;
+
+    const s1 = startEl.closest("span[style*='font-size']") as HTMLSpanElement | null;
+    const s2 = endEl.closest("span[style*='font-size']") as HTMLSpanElement | null;
+
+    if (s1 && s1 === s2 && root.contains(s1)) return s1;
+
+    return null;
   }
-};
-
-function getSingleSelectedFontSizeSpan(range: Range, root: HTMLElement): HTMLSpanElement | null {
-  // Caso 1: selección exacta de un nodo <span style="font-size:...">
-  const a = range.startContainer;
-  const b = range.endContainer;
-
-  if (a === b && range.startContainer.nodeType === Node.ELEMENT_NODE) {
-    const el = range.startContainer as Element;
-    const child = el.childNodes[range.startOffset];
-    if (child instanceof HTMLSpanElement && isFontSizeSpan(child) && root.contains(child)) return child;
-  }
-
-  // Caso 2: selection dentro del mismo font-size span (aunque sea selection parcial)
-  const startEl = (range.startContainer.nodeType === 1 ? (range.startContainer as Element) : range.startContainer.parentElement) as
-    | Element
-    | null;
-  const endEl = (range.endContainer.nodeType === 1 ? (range.endContainer as Element) : range.endContainer.parentElement) as
-    | Element
-    | null;
-
-  if (!startEl || !endEl) return null;
-
-  const s1 = startEl.closest("span[style*='font-size']") as HTMLSpanElement | null;
-  const s2 = endEl.closest("span[style*='font-size']") as HTMLSpanElement | null;
-
-  if (s1 && s1 === s2 && root.contains(s1)) return s1;
-
-  return null;
-}
 
   const formatText = (command: string, value?: string) => {
     const el = contentRef.current;
@@ -527,6 +587,11 @@ function getSingleSelectedFontSizeSpan(range: Range, root: HTMLElement): HTMLSpa
           currentP.appendChild(el);
         } else if (["DIV", "H1", "H2", "H3", "H4", "H5", "H6"].includes(tag)) {
           const p = document.createElement("p");
+
+          // ✅ NEW: preservar alineación
+          const ta = (el.style?.textAlign || "").trim();
+          if (ta) p.style.textAlign = ta;
+
           while (el.firstChild) p.appendChild(el.firstChild);
           top.replaceChild(p, el);
           currentP = null;
@@ -575,93 +640,157 @@ function getSingleSelectedFontSizeSpan(range: Range, root: HTMLElement): HTMLSpa
 
   const applyTextColor = () => document.execCommand("foreColor", false, textColor);
 
-  // ✅ aplica tamaño y DEVUELVE el range resultante (para seguir aplicando sobre el mismo texto)
-  // ✅ aplica tamaño y DEVUELVE el range resultante (para seguir aplicando sobre el mismo texto)
-// ✅ FIX: no anida spans -> sobreescribe o envuelve limpio
-const applyFontSizePx = (px: number, rangeOverride?: Range | null): Range | null => {
-  const el = contentRef.current;
-  if (!el) return null;
+  // ✅ NEW: Alineación por bloque (p/li/td/th/etc) + JUSTIFY
+  type AlignMode = "left" | "center" | "right" | "justify";
+  const applyAlignment = (mode: AlignMode) => {
+    const el = contentRef.current;
+    if (!el) return;
 
-  const size = clamp(px, 1, 500);
-
-  // intenta restaurar selección: prioridad rangeOverride -> lastRange
-  if (!restoreRange(rangeOverride ?? null)) {
+    el.focus();
     if (!restoreRange()) placeCaretAtEnd(el);
-  }
 
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return null;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
 
-  const range = sel.getRangeAt(0);
+    const range = sel.getRangeAt(0);
+    const blocks = getSelectedBlocks(range, el);
 
-  // ✅ COLLAPSED: si estás dentro de un font-size span, solo cambia ese span
-  if (range.collapsed) {
-    const currentSpan = closestFontSizeSpanFromSelection(el);
-    if (currentSpan) {
-      currentSpan.style.fontSize = `${size}px`;
-      unwrapNestedFontSizeSpansWithin(currentSpan);
+    const cssAlign = mode === "left" ? "left" : mode === "center" ? "center" : mode === "right" ? "right" : "justify";
+
+    if (blocks.length > 0) {
+      blocks.forEach((b) => {
+        b.style.textAlign = cssAlign;
+      });
+      handleContentChange();
+      return;
+    }
+
+    const current = closestBlockFromSelection(el);
+    if (current) {
+      current.style.textAlign = cssAlign;
+      handleContentChange();
+      return;
+    }
+
+    el.style.textAlign = cssAlign;
+    handleContentChange();
+  };
+
+  // ✅ aplica tamaño y DEVUELVE el range resultante (para seguir aplicando sobre el mismo texto)
+  // ✅ FIX: no anida spans -> sobreescribe o envuelve limpio
+  const applyFontSizePx = (px: number, rangeOverride?: Range | null): Range | null => {
+    const el = contentRef.current;
+    if (!el) return null;
+
+    const size = clamp(px, 1, 500);
+
+    // intenta restaurar selección: prioridad rangeOverride -> lastRange
+    if (!restoreRange(rangeOverride ?? null)) {
+      if (!restoreRange()) placeCaretAtEnd(el);
+    }
+
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+
+    const range = sel.getRangeAt(0);
+
+    // ✅ MULTI-BLOCK selection (varios <p>/<li>/etc):
+    // No envuelvas todo con <span> (inválido). Aplica por bloque.
+    const blocks = getSelectedBlocks(range, el);
+    if (blocks.length > 1) {
+      blocks.forEach((b) => {
+        // comportamiento "Word": el tamaño nuevo manda
+        b.style.fontSize = `${size}px`;
+
+        // opcional pero recomendado: elimina font-size internos para que no "ganen"
+        b.querySelectorAll("span[style*='font-size']").forEach((s) => {
+          (s as HTMLElement).style.fontSize = "";
+          // si el style queda vacío, límpialo
+          const st = (s as HTMLElement).getAttribute("style") || "";
+          const cleaned = st
+            .split(";")
+            .map((x) => x.trim())
+            .filter((x) => x && !/^font-size\s*:/i.test(x))
+            .join("; ");
+          if (cleaned) (s as HTMLElement).setAttribute("style", cleaned);
+          else (s as HTMLElement).removeAttribute("style");
+        });
+      });
+
       cleanupAllFontSizeSpans(el);
       handleContentChange();
+      return range.cloneRange();
+    }
+
+    // ✅ COLLAPSED: si estás dentro de un font-size span, solo cambia ese span
+    if (range.collapsed) {
+      const currentSpan = closestFontSizeSpanFromSelection(el);
+      if (currentSpan) {
+        currentSpan.style.fontSize = `${size}px`;
+        unwrapNestedFontSizeSpansWithin(currentSpan);
+        cleanupAllFontSizeSpans(el);
+        handleContentChange();
+        const sel2 = window.getSelection();
+        return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
+      }
+
+      // si no estás dentro de span, inserta uno con ZWSP (marcador)
+      document.execCommand("insertHTML", false, `<span style="font-size:${size}px;">\u200B</span>`);
+      normalizeTopLevelToParagraphs();
+      cleanupAllFontSizeSpans(el);
+      handleContentChange();
+
       const sel2 = window.getSelection();
       return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
     }
 
-    // si no estás dentro de span, inserta uno con ZWSP (marcador)
-    document.execCommand("insertHTML", false, `<span style="font-size:${size}px;">\u200B</span>`);
+    // ✅ NON-COLLAPSED: si ya es UN span con font-size seleccionado -> solo cambia ese span
+    const single = getSingleSelectedFontSizeSpan(range, el);
+    if (single) {
+      single.style.fontSize = `${size}px`;
+      unwrapNestedFontSizeSpansWithin(single);
+      cleanupAllFontSizeSpans(el);
+      handleContentChange();
+
+      // Mantén seleccionado el contenido del mismo span
+      sel.removeAllRanges();
+      const r2 = document.createRange();
+      r2.selectNodeContents(single);
+      sel.addRange(r2);
+      return r2.cloneRange();
+    }
+
+    // ✅ Caso general: wrap limpio
+    const extracted = range.extractContents();
+    const cleanedFrag = stripFontSizeSpansFromFragment(extracted);
+
+    const wrapper = document.createElement("span");
+    wrapper.style.fontSize = `${size}px`;
+    wrapper.appendChild(cleanedFrag);
+
+    range.insertNode(wrapper);
+
+    // 🔥 Si el wrapper quedó dentro de otro font-size span, NO anides: sube el estilo al padre y unwrap
+    const parentFs = wrapper.parentElement?.closest("span[style*='font-size']") as HTMLSpanElement | null;
+    if (parentFs && parentFs !== wrapper) {
+      parentFs.style.fontSize = `${size}px`;
+      unwrapElement(wrapper);
+      unwrapNestedFontSizeSpansWithin(parentFs);
+    } else {
+      unwrapNestedFontSizeSpansWithin(wrapper);
+    }
+
+    sel.removeAllRanges();
+    const newRange = document.createRange();
+    newRange.selectNodeContents(parentFs ?? wrapper);
+    sel.addRange(newRange);
+
     normalizeTopLevelToParagraphs();
     cleanupAllFontSizeSpans(el);
     handleContentChange();
 
-    const sel2 = window.getSelection();
-    return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
-  }
-
-// ✅ NON-COLLAPSED: si ya es UN span con font-size seleccionado -> solo cambia ese span
-const single = getSingleSelectedFontSizeSpan(range, el);
-if (single) {
-  single.style.fontSize = `${size}px`;
-  unwrapNestedFontSizeSpansWithin(single);
-  cleanupAllFontSizeSpans(el);
-  handleContentChange();
-
-  // Mantén seleccionado el contenido del mismo span
-  sel.removeAllRanges();
-  const r2 = document.createRange();
-  r2.selectNodeContents(single);
-  sel.addRange(r2);
-  return r2.cloneRange();
-}
-
-// ✅ Caso general: wrap limpio
-const extracted = range.extractContents();
-const cleanedFrag = stripFontSizeSpansFromFragment(extracted);
-
-const wrapper = document.createElement("span");
-wrapper.style.fontSize = `${size}px`;
-wrapper.appendChild(cleanedFrag);
-
-range.insertNode(wrapper);
-
-// 🔥 Si el wrapper quedó dentro de otro font-size span, NO anides: sube el estilo al padre y unwrap
-const parentFs = wrapper.parentElement?.closest("span[style*='font-size']") as HTMLSpanElement | null;
-if (parentFs && parentFs !== wrapper) {
-  parentFs.style.fontSize = `${size}px`;
-  unwrapElement(wrapper);
-  unwrapNestedFontSizeSpansWithin(parentFs);
-} else {
-  unwrapNestedFontSizeSpansWithin(wrapper);
-}
-
-sel.removeAllRanges();
-const newRange = document.createRange();
-newRange.selectNodeContents(parentFs ?? wrapper);
-sel.addRange(newRange);
-
-normalizeTopLevelToParagraphs();
-cleanupAllFontSizeSpans(el);
-handleContentChange();
-
-return newRange.cloneRange();}
+    return newRange.cloneRange();
+  };
 
   // ✅ aplica tamaño desde toolbar SIN perder el cursor del input (puedes seguir tecleando)
   const applySizeFromToolbar = (n: number) => {
@@ -679,7 +808,7 @@ return newRange.cloneRange();}
       if (start !== null && end !== null) {
         try {
           input.setSelectionRange(start, end);
-        } catch {}
+        } catch { }
       }
     });
   };
@@ -935,7 +1064,7 @@ return newRange.cloneRange();}
     document.body.style.userSelect = "";
     try {
       (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
-    } catch {}
+    } catch { }
   };
 
   // ✅ Auto refresh con debounce mientras escribes (si preview abierto)
@@ -1074,6 +1203,45 @@ return newRange.cloneRange();}
           >
             <ListOrdered className="w-4 h-4" />
           </button>
+
+          {/* ✅ NEW: ALINEACIÓN (izq/centro/der/justificar) */}
+          <div className="flex items-center gap-1 ml-1">
+            <button
+              onClick={() => applyAlignment("left")}
+              className="p-2 hover:bg-gray-200 rounded"
+              title="Alinear a la izquierda"
+              type="button"
+            >
+              <AlignLeft className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => applyAlignment("center")}
+              className="p-2 hover:bg-gray-200 rounded"
+              title="Centrar"
+              type="button"
+            >
+              <AlignCenter className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => applyAlignment("right")}
+              className="p-2 hover:bg-gray-200 rounded"
+              title="Alinear a la derecha"
+              type="button"
+            >
+              <AlignRight className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => applyAlignment("justify")}
+              className="p-2 hover:bg-gray-200 rounded"
+              title="Justificar"
+              type="button"
+            >
+              <AlignJustify className="w-4 h-4" />
+            </button>
+          </div>
 
           <button onClick={openTableModal} className="p-2 hover:bg-gray-200 rounded" title="Insertar tabla" type="button">
             <Table className="w-4 h-4" />
@@ -1512,7 +1680,17 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
                   opacity: 0.8,
                 }}
               >
-                <div style={{ position: "absolute", right: -2, top: -2, width: 10, height: 10, borderRadius: 999, background: bg }} />
+                <div
+                  style={{
+                    position: "absolute",
+                    right: -2,
+                    top: -2,
+                    width: 10,
+                    height: 10,
+                    borderRadius: 999,
+                    background: bg,
+                  }}
+                />
               </div>
             </div>
           </div>
