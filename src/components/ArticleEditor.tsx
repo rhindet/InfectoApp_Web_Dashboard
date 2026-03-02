@@ -191,6 +191,18 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   const [borderColor, setBorderColor] = useState("#000000");
   const [textColor, setTextColor] = useState("#000000");
 
+
+    // ===============================
+  // ✅ IMAGE RESIZE (affects preview + saved html)
+  // ===============================
+  const [imgToolOpen, setImgToolOpen] = useState(false);
+  const [imgToolPos, setImgToolPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+  const [imgW, setImgW] = useState<string>(""); // px o %
+  const [imgH, setImgH] = useState<string>(""); // px
+  const selectedImgRef = useRef<HTMLImageElement | null>(null);
+  const imgToolRef = useRef<HTMLDivElement>(null);
+
+
   // ✅ Tamaño actual (px)
   const [fontSizePx, setFontSizePx] = useState<number>(14);
   // ✅ Input controlado como texto para permitir escribir "cualquier número"
@@ -226,6 +238,94 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
   const PHONE_W = 380;
   const PHONE_H = 720;
+
+    function parseStyleSize(value: string | null | undefined) {
+    const v = (value || "").trim();
+    if (!v) return "";
+    return v;
+  }
+
+  function readImgInlineSizes(img: HTMLImageElement) {
+    // Lee inline style (lo que guardas)
+    const w = parseStyleSize(img.style.width);
+    const h = parseStyleSize(img.style.height);
+    setImgW(w.replace("px", "")); // mostramos sin px si es px
+    setImgH(h.replace("px", ""));
+  }
+
+  function openImgToolFor(img: HTMLImageElement) {
+    const root = contentRef.current;
+    if (!root) return;
+
+    selectedImgRef.current = img;
+    readImgInlineSizes(img);
+
+    // Posición del panel: relativo al editor
+    const rImg = img.getBoundingClientRect();
+    const rRoot = root.getBoundingClientRect();
+
+    const left = Math.max(8, rImg.left - rRoot.left);
+    const top = Math.max(8, rImg.top - rRoot.top - 44); // arriba de la imagen
+
+    setImgToolPos({ left, top });
+    setImgToolOpen(true);
+  }
+
+  function closeImgTool() {
+    setImgToolOpen(false);
+    selectedImgRef.current = null;
+  }
+
+  function applyImgSize() {
+    const img = selectedImgRef.current;
+    if (!img) return;
+
+    // Normaliza entradas
+    const wRaw = (imgW || "").trim();
+    const hRaw = (imgH || "").trim();
+
+    // width: puede ser "300" -> 300px o "60%" -> 60%
+    if (!wRaw) {
+      img.style.width = "";
+    } else if (wRaw.endsWith("%")) {
+      img.style.width = wRaw;
+    } else {
+      const n = Number(wRaw);
+      img.style.width = Number.isFinite(n) && n > 0 ? `${Math.round(n)}px` : "";
+    }
+
+    // height: solo px (si lo dejas vacío -> auto)
+    if (!hRaw) {
+      img.style.height = "auto";
+    } else {
+      const n = Number(hRaw);
+      img.style.height = Number.isFinite(n) && n > 0 ? `${Math.round(n)}px` : "auto";
+    }
+
+    // Mantén tus constraints existentes
+    img.style.maxWidth = "100%";
+    img.style.objectFit = img.style.objectFit || "contain";
+
+    handleContentChange(); // ✅ esto actualiza state => preview y guardado
+  }
+
+  function resetImgSize() {
+    const img = selectedImgRef.current;
+    if (!img) return;
+    img.style.width = "";
+    img.style.height = "auto";
+    img.style.maxWidth = "100%";
+    img.style.objectFit = "contain";
+    setImgW("");
+    setImgH("");
+    handleContentChange();
+  }
+
+  function setImgPercent(pct: number) {
+    setImgW(`${pct}%`);
+    setImgH(""); // auto
+    requestAnimationFrame(() => applyImgSize());
+  }
 
   const rememberRangeIfInside = () => {
     const el = contentRef.current;
@@ -323,6 +423,32 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
     restoreRange();
   };
+
+    useEffect(() => {
+    const root = contentRef.current;
+    if (!root) return;
+
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+
+      // Click dentro del panel => no cerrar
+      if (imgToolRef.current && imgToolRef.current.contains(t)) return;
+
+      // Click sobre imagen => abrir panel
+      if (t.tagName === "IMG") {
+        openImgToolFor(t as HTMLImageElement);
+        return;
+      }
+
+      // Click fuera => cerrar
+      if (imgToolOpen) closeImgTool();
+    };
+
+    root.addEventListener("click", onClick);
+    return () => root.removeEventListener("click", onClick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imgToolOpen]);
 
   useEffect(() => {
     setTitle(article?.tema ?? "");
@@ -959,7 +1085,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     handleContentChange();
   };
 
-  const insertImageAtSelection = (src: string, alt = "") => {
+   const insertImageAtSelection = (src: string, alt = "") => {
     const el = contentRef.current;
     if (!el) return;
     el.focus();
@@ -969,6 +1095,13 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     document.execCommand("insertHTML", false, `<p>${imgHtml}</p><p><br></p>`);
     normalizeTopLevelToParagraphs();
     handleContentChange();
+
+    // ✅ NEW: abrir tool en la última imagen insertada
+    requestAnimationFrame(() => {
+      const imgs = el.querySelectorAll("img");
+      const last = imgs[imgs.length - 1] as HTMLImageElement | undefined;
+      if (last) openImgToolFor(last);
+    });
   };
 
   const readFileAsDataURL = (file: File) =>
@@ -1414,6 +1547,97 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             style={{ minHeight: "200px", whiteSpace: "pre-wrap" }}
           />
         </div>
+
+                  {imgToolOpen && (
+            <div
+              ref={imgToolRef}
+              className="absolute z-50 bg-white border rounded-lg shadow-lg p-2"
+              style={{ left: imgToolPos.left, top: imgToolPos.top, minWidth: 260 }}
+            >
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="text-xs font-semibold text-gray-700">Imagen</div>
+                <button
+                  type="button"
+                  className="p-1 rounded hover:bg-gray-100"
+                  onClick={closeImgTool}
+                  title="Cerrar"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-gray-600 mb-1">Ancho (px o %)</label>
+                  <input
+                    value={imgW}
+                    onChange={(e) => setImgW(e.target.value.replace(/[^\d%]/g, ""))}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                    placeholder="Ej: 320 ó 60%"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-600 mb-1">Alto (px)</label>
+                  <input
+                    value={imgH}
+                    onChange={(e) => setImgH(e.target.value.replace(/[^\d]/g, ""))}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                    placeholder="auto"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between mt-2 gap-2">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                    onClick={() => setImgPercent(25)}
+                  >
+                    25%
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                    onClick={() => setImgPercent(50)}
+                  >
+                    50%
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                    onClick={() => setImgPercent(75)}
+                  >
+                    75%
+                  </button>
+                  <button
+                    type="button"
+                    className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                    onClick={() => setImgPercent(100)}
+                  >
+                    100%
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                    onClick={resetImgSize}
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1 rounded text-xs bg-blue-600 text-white hover:bg-blue-700"
+                    onClick={applyImgSize}
+                  >
+                    Aplicar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
       </div>
 
       {tableModalOpen && (
