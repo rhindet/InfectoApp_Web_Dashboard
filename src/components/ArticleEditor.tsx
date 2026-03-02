@@ -1093,8 +1093,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           .content-editable th, .content-editable td { border: 1px solid #e5e7eb; padding: 6px; vertical-align: top; }
           .content-editable thead th { background: #f3f4f6; }
 
-          .content-editable img { max-width: 100%; height: auto; display: inline-block; }
-
+          .content-editable img {
+  max-width: 100%;
+  height: auto;
+  max-height: 180px;
+  object-fit: contain;
+  display: block;
+  margin: 8px auto;
+}
           .flutter-html { font-size: 14px; line-height: 1.35; }
           .flutter-html p { margin: 0 0 8px 0; }
           .flutter-html p:last-child { margin-bottom: 0; }
@@ -1290,8 +1296,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               onClick={() =>
                 formatText(
                   "insertHTML",
-                  `<span data-border="1" style="border:1px solid ${borderColor};padding:2px 6px;border-radius:6px;display:inline-block;">${
-                    escapeHtml(window.getSelection()?.toString() || "") || "&nbsp;"
+                  `<span data-border="1" style="border:1px solid ${borderColor};padding:2px 6px;border-radius:6px;display:inline-block;">${escapeHtml(window.getSelection()?.toString() || "") || "&nbsp;"
                   }</span>`
                 )
               }
