@@ -1,7 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Bold, Italic, Underline, List, ListOrdered, Save, X, Table,
-  PlusCircle, Highlighter, Square, Type, ImagePlus
+  Bold,
+  Italic,
+  Underline,
+  List,
+  ListOrdered,
+  Save,
+  X,
+  Table,
+  PlusCircle,
+  Highlighter,
+  Square,
+  Type,
+  ImagePlus,
+  Smartphone,
+  Crosshair,
+  ChevronDown,
 } from 'lucide-react';
 import { Article } from '../types';
 
@@ -12,6 +26,17 @@ interface ArticleEditorProps {
   onCancel: () => void;
 }
 
+type DragState = {
+  dragging: boolean;
+  pointerId: number | null;
+  startX: number;
+  startY: number;
+  startLeft: number;
+  startTop: number;
+};
+
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+
 const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel, onUpdate }) => {
   const [title, setTitle] = useState<string>(article?.tema ?? '');
   const [content, setContent] = useState<string>(article?.contenidos?.[0] ?? '');
@@ -20,10 +45,42 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   const [highlightColor, setHighlightColor] = useState('#FFF3CD');
   const [borderColor, setBorderColor] = useState('#000000');
   const [textColor, setTextColor] = useState('#000000');
-  const [fontSize, setFontSize] = useState('3');
+
+  // ✅ Tamaño actual (px)
+  const [fontSizePx, setFontSizePx] = useState<number>(14);
+  // ✅ Input controlado como texto para permitir escribir "cualquier número"
+  const [fontSizeInput, setFontSizeInput] = useState<string>('14');
 
   const lastRangeRef = useRef<Range | null>(null);
+  // ✅ Range que se usa específicamente para acciones del toolbar (input tamaño / dropdown)
+  const sizeRangeRef = useRef<Range | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fontSizeInputRef = useRef<HTMLInputElement>(null);
+
+  // ✅ Dropdown sizes estilo Word
+  const [sizeMenuOpen, setSizeMenuOpen] = useState(false);
+  const sizeMenuRef = useRef<HTMLDivElement>(null);
+  const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
+
+  // ✅ Preview (celular flotante)
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTitle, setPreviewTitle] = useState('');
+  const [previewHtml, setPreviewHtml] = useState('');
+
+  // posición del panel flotante
+  const [previewPos, setPreviewPos] = useState<{ left: number; top: number }>({ left: 24, top: 120 });
+  const dragRef = useRef<DragState>({
+    dragging: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    startLeft: 0,
+    startTop: 0,
+  });
+
+  const PHONE_W = 380;
+  const PHONE_H = 720;
 
   const rememberRangeIfInside = () => {
     const el = contentRef.current;
@@ -35,14 +92,15 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
   };
 
-  const restoreRange = () => {
+  const restoreRange = (rangeOverride?: Range | null) => {
     const el = contentRef.current;
     const sel = window.getSelection();
     if (!el || !sel) return false;
-    if (lastRangeRef.current) {
+    const r = rangeOverride ?? lastRangeRef.current;
+    if (r) {
       el.focus();
       sel.removeAllRanges();
-      sel.addRange(lastRangeRef.current);
+      sel.addRange(r);
       return true;
     }
     return false;
@@ -66,8 +124,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     let node: ChildNode | null = root.firstChild;
     let currentP: HTMLParagraphElement | null = null;
 
-    const isBlockKeep = (el: HTMLElement) =>
-      ['P', 'UL', 'OL', 'TABLE', 'PRE', 'BLOCKQUOTE'].includes(el.tagName);
+    const isBlockKeep = (el: HTMLElement) => ['P', 'UL', 'OL', 'TABLE', 'PRE', 'BLOCKQUOTE'].includes(el.tagName);
 
     while (node) {
       const next = node.nextSibling;
@@ -89,7 +146,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             root.insertBefore(currentP, el);
           }
           currentP.appendChild(el);
-        } else if (['DIV','H1','H2','H3','H4','H5','H6'].includes(tag)) {
+        } else if (['DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(tag)) {
           const p = document.createElement('p');
           while (el.firstChild) p.appendChild(el.firstChild);
           root.replaceChild(p, el);
@@ -125,7 +182,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       contentRef.current.innerHTML = initial || '<p><br></p>';
       normalizeTopLevelToParagraphs();
     }
-    try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
+    try {
+      document.execCommand('defaultParagraphSeparator', false, 'p');
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [article]);
 
   useEffect(() => {
@@ -143,6 +203,26 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       document.removeEventListener('selectionchange', onSelChange);
     };
   }, []);
+
+  // cerrar dropdown size al click fuera / ESC
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!sizeMenuOpen) return;
+      const target = e.target as Node;
+      if (sizeMenuRef.current && !sizeMenuRef.current.contains(target)) {
+        setSizeMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSizeMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [sizeMenuOpen]);
 
   const handleContentChange = () => {
     normalizeTopLevelToParagraphs();
@@ -180,7 +260,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             `${isOl ? 'list-style: decimal;' : 'list-style: disc;'} padding-left: 1.25rem; margin: 0.5rem 0;`
           );
         }
-        node.querySelectorAll('li').forEach(li => {
+        node.querySelectorAll('li').forEach((li) => {
           if (!(li as HTMLElement).innerHTML.trim()) (li as HTMLElement).innerHTML = '&nbsp;';
         });
         break;
@@ -214,7 +294,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       .replace(/'/g, '&#39;');
   }
 
-  // Pegar/arrastrar solo texto
   const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault();
     const text = e.clipboardData?.getData('text/plain') ?? '';
@@ -251,9 +330,9 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     const root = doc.getElementById('root') as HTMLElement;
     if (!root) return raw;
 
-    doc.querySelectorAll('meta, title, style, script, link').forEach(n => n.remove());
+    doc.querySelectorAll('meta, title, style, script, link').forEach((n) => n.remove());
 
-    root.querySelectorAll('h1, h2, h3').forEach(h => {
+    root.querySelectorAll('h1, h2, h3').forEach((h) => {
       if (h === root.firstElementChild && h === root.lastElementChild) {
         const frag = doc.createDocumentFragment();
         while (h.firstChild) frag.appendChild(h.firstChild);
@@ -261,26 +340,24 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       }
     });
 
-    root.querySelectorAll<HTMLElement>('*').forEach(el => {
+    root.querySelectorAll<HTMLElement>('*').forEach((el) => {
       if (el.className && /(^|\s)Mso[\w-]*/i.test(el.className)) el.removeAttribute('class');
 
       if (el.hasAttribute('style')) {
         const css = el.getAttribute('style') || '';
         const cleaned = css
           .split(';')
-          .map(s => s.trim())
-          .filter(s => s && !s.startsWith('--tw-'))
+          .map((s) => s.trim())
+          .filter((s) => s && !s.startsWith('--tw-'))
           .join('; ');
         if (cleaned) el.setAttribute('style', cleaned);
         else el.removeAttribute('style');
       }
 
-      if (el.tagName === 'SPAN' && el.textContent?.trim() === '' && !el.children.length) {
-        el.remove();
-      }
+      if (el.tagName === 'SPAN' && el.textContent?.trim() === '' && !el.children.length) el.remove();
     });
 
-    root.querySelectorAll('ul, ol').forEach(list => {
+    root.querySelectorAll('ul, ol').forEach((list) => {
       if (!list.querySelector('li')) list.remove();
     });
 
@@ -300,8 +377,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     let node: ChildNode | null = top.firstChild;
     let currentP: HTMLParagraphElement | null = null;
 
-    const isBlockKeep = (el: HTMLElement) =>
-      ['P','UL','OL','TABLE','PRE','BLOCKQUOTE'].includes(el.tagName);
+    const isBlockKeep = (el: HTMLElement) => ['P', 'UL', 'OL', 'TABLE', 'PRE', 'BLOCKQUOTE'].includes(el.tagName);
 
     while (node) {
       const next = node.nextSibling;
@@ -320,13 +396,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as HTMLElement;
         const tag = el.tagName;
+
         if (tag === 'BR') {
           if (!currentP) {
             currentP = document.createElement('p');
             top.insertBefore(currentP, el);
           }
           currentP.appendChild(el);
-        } else if (['DIV','H1','H2','H3','H4','H5','H6'].includes(tag)) {
+        } else if (['DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(tag)) {
           const p = document.createElement('p');
           while (el.firstChild) p.appendChild(el.firstChild);
           top.replaceChild(p, el);
@@ -345,7 +422,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       node = next;
     }
 
-    top.querySelectorAll('p').forEach(p => {
+    top.querySelectorAll('p').forEach((p) => {
       const onlyWhitespace = !(p.textContent ?? '').trim();
       const noChildren = p.children.length === 0;
       if (onlyWhitespace && noChildren) p.innerHTML = '<br>';
@@ -354,8 +431,90 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     return top.innerHTML.trim();
   }
 
+  function addFlutterSpanAttrs(html: string): string {
+    if (!html) return html;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<div id="root">${html}</div>`, 'text/html');
+    const root = doc.getElementById('root') as HTMLElement;
+    if (!root) return html;
+
+    root.querySelectorAll('span[style]').forEach((span) => {
+      const style = (span.getAttribute('style') || '').toLowerCase();
+      if ((style.includes('border:') || style.includes('border-width')) && !span.hasAttribute('data-border')) {
+        span.setAttribute('data-border', '1');
+      }
+      if (style.includes('background-color') && !span.hasAttribute('data-highlight')) {
+        span.setAttribute('data-highlight', '1');
+      }
+    });
+
+    return root.innerHTML;
+  }
+
   const applyTextColor = () => document.execCommand('foreColor', false, textColor);
-  const applyFontSize = () => document.execCommand('fontSize', false, fontSize);
+
+  // ✅ aplica tamaño y DEVUELVE el range resultante (para seguir aplicando sobre el mismo texto)
+  const applyFontSizePx = (px: number, rangeOverride?: Range | null): Range | null => {
+    const el = contentRef.current;
+    if (!el) return null;
+
+    const size = clamp(px, 1, 500);
+
+    if (!restoreRange(rangeOverride ?? null)) {
+      if (!restoreRange()) placeCaretAtEnd(el);
+    }
+
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+
+    const range = sel.getRangeAt(0);
+
+    if (range.collapsed) {
+      document.execCommand('insertHTML', false, `<span style="font-size:${size}px;">\u200B</span>`);
+      normalizeTopLevelToParagraphs();
+      handleContentChange();
+
+      const sel2 = window.getSelection();
+      return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
+    }
+
+    const frag = range.extractContents();
+    const wrapper = document.createElement('span');
+    wrapper.style.fontSize = `${size}px`;
+    wrapper.appendChild(frag);
+    range.insertNode(wrapper);
+
+    sel.removeAllRanges();
+    const newRange = document.createRange();
+    newRange.selectNodeContents(wrapper);
+    sel.addRange(newRange);
+
+    normalizeTopLevelToParagraphs();
+    handleContentChange();
+
+    return newRange.cloneRange();
+  };
+
+  // ✅ aplica tamaño desde toolbar SIN perder el cursor del input (puedes seguir tecleando)
+  const applySizeFromToolbar = (n: number) => {
+    const input = fontSizeInputRef.current;
+    const start = input?.selectionStart ?? null;
+    const end = input?.selectionEnd ?? null;
+
+    const baseRange = sizeRangeRef.current ?? lastRangeRef.current ?? null;
+    const nextRange = applyFontSizePx(n, baseRange);
+    if (nextRange) sizeRangeRef.current = nextRange.cloneRange();
+
+    requestAnimationFrame(() => {
+      if (!input) return;
+      input.focus();
+      if (start !== null && end !== null) {
+        try {
+          input.setSelectionRange(start, end);
+        } catch {}
+      }
+    });
+  };
 
   const insertTable = (rows = 2, cols = 2, withHeader = true) => {
     const el = contentRef.current;
@@ -364,15 +523,18 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     el.focus();
     if (!restoreRange()) placeCaretAtEnd(el);
 
-    const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
     rows = clamp(rows, 1, 20);
     cols = clamp(cols, 1, 20);
 
     const makeCells = (count: number, tag: 'th' | 'td') =>
-      Array.from({ length: count }).map(() => `<${tag}> </${tag}>`).join('');
+      Array.from({ length: count })
+        .map(() => `<${tag}> </${tag}>`)
+        .join('');
 
     const thead = withHeader ? `<thead><tr>${makeCells(cols, 'th')}</tr></thead>` : '';
-    const bodyRows = Array.from({ length: rows }).map(() => `<tr>${makeCells(cols, 'td')}</tr>`).join('');
+    const bodyRows = Array.from({ length: rows })
+      .map(() => `<tr>${makeCells(cols, 'td')}</tr>`)
+      .join('');
 
     const tableHtml = `
       <table style="border-collapse:collapse; width:100%; margin:8px 0;">
@@ -393,6 +555,8 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     handleContentChange();
   };
 
+  const isEditing = Boolean(article?._id);
+
   const handleSave = () => {
     const tema = title.trim();
     const htmlRaw = (contentRef.current?.innerHTML ?? '').trim();
@@ -406,8 +570,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
     onSave({ _id: article?._id, tema, contenidos: [html] });
   };
-
-  const isEditing = Boolean(article?._id);
 
   const [tableModalOpen, setTableModalOpen] = useState(false);
   const [tableRows, setTableRows] = useState(2);
@@ -436,7 +598,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   function forEachElementInRange(range: Range, root: HTMLElement, cb: (el: HTMLElement) => void) {
     const common = range.commonAncestorContainer;
     const walker = document.createTreeWalker(
-      (common.nodeType === 1 ? common : common.parentElement!) as Element,
+      (common.nodeType === 1 ? common : (common.parentElement as Element)) as Element,
       NodeFilter.SHOW_ELEMENT,
       null
     );
@@ -470,8 +632,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
 
     const targetRgb = toRgbString(highlightColor);
-    const currentCmdVal =
-      document.queryCommandValue('hiliteColor') || document.queryCommandValue('backColor') || '';
+    const currentCmdVal = document.queryCommandValue('hiliteColor') || document.queryCommandValue('backColor') || '';
     const currentRgb = currentCmdVal ? toRgbString(currentCmdVal) : '';
     const shouldRemove = currentRgb && currentRgb === targetRgb;
 
@@ -484,15 +645,15 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     forEachElementInRange(range, el, (node) => {
       const bg = getComputedStyle(node).backgroundColor;
       if (bg && toRgbString(bg) === targetRgb) {
-        const style = (node as HTMLElement).getAttribute('style') || '';
+        const style = node.getAttribute('style') || '';
         if (style.includes('background-color')) {
           const cleaned = style
             .split(';')
-            .map(s => s.trim())
-            .filter(s => s && !/^background-color\s*:/i.test(s))
+            .map((s) => s.trim())
+            .filter((s) => s && !/^background-color\s*:/i.test(s))
             .join('; ');
-          if (cleaned) (node as HTMLElement).setAttribute('style', cleaned);
-          else (node as HTMLElement).removeAttribute('style');
+          if (cleaned) node.setAttribute('style', cleaned);
+          else node.removeAttribute('style');
         }
       }
     });
@@ -527,13 +688,81 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     insertImageAtSelection(dataUrl, file.name);
   };
 
-  const chooseImageFromDisk = () => fileInputRef.current?.click();
-
   const insertImageFromUrl = () => {
     const url = window.prompt('Pega la URL de la imagen:')?.trim();
     if (!url) return;
     if (/^javascript:/i.test(url)) return;
     insertImageAtSelection(url);
+  };
+
+  const openPreview = () => {
+    const tema = title.trim() || 'Sin título';
+    const raw = (contentRef.current?.innerHTML ?? '').trim() || '<p><br></p>';
+
+    const cleaned0 = addFlutterSpanAttrs(cleanHtml(raw));
+    const cleaned = cleaned0.replace(/<p><br><\/p>/gi, '<p class="p-empty"><br></p>');
+
+    setPreviewTitle(tema);
+    setPreviewHtml(cleaned);
+    setPreviewOpen(true);
+
+    const maxLeft = Math.max(0, window.innerWidth - PHONE_W - 16);
+    const maxTop = Math.max(0, window.innerHeight - PHONE_H - 16);
+    setPreviewPos((p) => ({
+      left: clamp(p.left, 8, maxLeft),
+      top: clamp(p.top, 8, maxTop),
+    }));
+  };
+
+  const closePreview = () => setPreviewOpen(false);
+
+  const centerPreview = () => {
+    const maxLeft = Math.max(0, window.innerWidth - PHONE_W);
+    const maxTop = Math.max(0, window.innerHeight - PHONE_H);
+    setPreviewPos({
+      left: Math.max(8, Math.round(maxLeft / 2)),
+      top: Math.max(8, Math.round(maxTop / 2)),
+    });
+  };
+
+  const onDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const st = dragRef.current;
+    st.dragging = true;
+    st.pointerId = e.pointerId;
+    st.startX = e.clientX;
+    st.startY = e.clientY;
+    st.startLeft = previewPos.left;
+    st.startTop = previewPos.top;
+    document.body.style.userSelect = 'none';
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+  };
+
+  const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const st = dragRef.current;
+    if (!st.dragging || st.pointerId !== e.pointerId) return;
+
+    const dx = e.clientX - st.startX;
+    const dy = e.clientY - st.startY;
+
+    const maxLeft = Math.max(0, window.innerWidth - PHONE_W - 8);
+    const maxTop = Math.max(0, window.innerHeight - PHONE_H - 8);
+
+    setPreviewPos({
+      left: clamp(st.startLeft + dx, 8, maxLeft),
+      top: clamp(st.startTop + dy, 8, maxTop),
+    });
+  };
+
+  const onDragEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    const st = dragRef.current;
+    if (st.pointerId !== e.pointerId) return;
+    st.dragging = false;
+    st.pointerId = null;
+    document.body.style.userSelect = '';
+    try {
+      (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+    } catch {}
   };
 
   return (
@@ -554,19 +783,48 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           .content-editable th, .content-editable td { border: 1px solid #e5e7eb; padding: 6px; vertical-align: top; }
           .content-editable thead th { background: #f3f4f6; }
 
-          .content-editable img {
-            max-width: 100%;
-            height: auto;
+          .content-editable img { max-width: 100%; height: auto; display: inline-block; }
+
+          .flutter-html { font-size: 14px; line-height: 1.35; }
+          .flutter-html p { margin: 0 0 8px 0; }
+          .flutter-html p:last-child { margin-bottom: 0; }
+          .flutter-html p.p-empty { margin: 0 0 8px 0; }
+          .flutter-html h1 { font-size: 26px; font-weight: 800; margin: 0 0 10px 0; }
+          .flutter-html h2 { font-size: 18px; font-weight: 800; margin: 14px 0 8px 0; }
+          .flutter-html a { text-decoration: underline; font-weight: 600; }
+          .flutter-html ul, .flutter-html ol { margin: 0 0 8px 0; padding-left: 1.25rem; }
+          .flutter-html li { margin: 0; }
+          .flutter-html table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+          .flutter-html th, .flutter-html td { border: 1px solid #e5e7eb; padding: 6px; vertical-align: top; }
+          .flutter-html thead th { background: #f3f4f6; }
+          .flutter-html img { max-width: 100%; height: auto; display: inline-block; }
+          .flutter-html .pill {
             display: inline-block;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid #CAE3FA;
+            background: #E9F2FB;
+            color: #1E6BB8;
+            font-weight: 800;
+            font-size: 12px;
+            margin: 0 6px 6px 0;
           }
+          .flutter-html .muted { opacity: .75; }
         `}
       </style>
 
       <div className="flex items-center justify-between p-6 border-b">
-        <h2 className="text-xl font-semibold text-gray-800">
-          {isEditing ? 'Editar Artículo' : 'Nuevo Artículo'}
-        </h2>
+        <h2 className="text-xl font-semibold text-gray-800">{isEditing ? 'Editar Artículo' : 'Nuevo Artículo'}</h2>
         <div className="flex gap-2">
+          <button
+            onClick={openPreview}
+            className="px-4 py-2 bg-black text-white rounded-lg hover:bg-black/80 transition-colors flex items-center gap-2"
+            title="Previsualizar como en la app"
+          >
+            <Smartphone className="w-4 h-4" />
+            Previsualizar
+          </button>
+
           <button
             onClick={handleSave}
             disabled={!title.trim() || !content.trim()}
@@ -575,6 +833,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             {isEditing ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
             {isEditing ? 'ACTUALIZAR' : 'CREAR'}
           </button>
+
           <button
             onClick={onCancel}
             className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors flex items-center gap-2"
@@ -622,18 +881,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           </button>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={chooseImageFromDisk}
-              className="p-2 hover:bg-gray-200 rounded"
-              title="Insertar imagen (archivo)"
-            >
+            <button onClick={() => fileInputRef.current?.click()} className="p-2 hover:bg-gray-200 rounded" title="Insertar imagen (archivo)">
               <ImagePlus className="w-4 h-4" />
             </button>
-            <button
-              onClick={insertImageFromUrl}
-              className="px-2 py-1 border rounded text-sm hover:bg-gray-200"
-              title="Insertar imagen desde URL"
-            >
+            <button onClick={insertImageFromUrl} className="px-2 py-1 border rounded text-sm hover:bg-gray-200" title="Insertar imagen desde URL">
               URL
             </button>
             <input
@@ -661,7 +912,9 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               onClick={() =>
                 formatText(
                   'insertHTML',
-                  `<span style="border:1px solid ${borderColor};padding:2px 6px;border-radius:6px;display:inline-block;">${window.getSelection()?.toString() || '&nbsp;'}</span>`
+                  `<span data-border="1" style="border:1px solid ${borderColor};padding:2px 6px;border-radius:6px;display:inline-block;">${
+                    escapeHtml(window.getSelection()?.toString() || '') || '&nbsp;'
+                  }</span>`
                 )
               }
               className="p-2 hover:bg-gray-200 rounded"
@@ -679,21 +932,93 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} />
           </div>
 
-          <select
-            value={fontSize}
-            onChange={(e) => setFontSize(e.target.value)}
-            onBlur={applyFontSize}
-            className="border rounded p-1 text-sm"
-            title="Tamaño de texto"
-          >
-            <option value="1">Muy pequeño</option>
-            <option value="2">Pequeño</option>
-            <option value="3">Normal</option>
-            <option value="4">Grande</option>
-            <option value="5">Muy grande</option>
-            <option value="6">Extra grande</option>
-            <option value="7">Gigante</option>
-          </select>
+          {/* ✅ Tamaño estilo Word: input + dropdown */}
+          <div className="flex items-center gap-2">
+            {/* Dropdown */}
+            <div className="relative" ref={sizeMenuRef}>
+              <button
+                type="button"
+                className="px-2 py-1 border rounded text-sm hover:bg-gray-200 flex items-center gap-1"
+                onMouseDown={() => {
+                  // guarda selección antes de abrir menú
+                  rememberRangeIfInside();
+                  if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
+                }}
+                onClick={() => setSizeMenuOpen((s) => !s)}
+                title="Tamaños"
+              >
+                {fontSizePx}
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              {sizeMenuOpen && (
+                <div className="absolute z-50 mt-1 w-[110px] max-h-64 overflow-auto bg-white border rounded shadow">
+                  {SIZES.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100"
+                      onMouseDown={(e) => {
+                        // evita que el click mate la selección del editor
+                        e.preventDefault();
+                        rememberRangeIfInside();
+                        if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
+                      }}
+                      onClick={() => {
+                        setFontSizePx(s);
+                        setFontSizeInput(String(s));
+                        applySizeFromToolbar(s);
+                        setSizeMenuOpen(false);
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Input libre: escribe y aplica INMEDIATO, sin Enter */}
+            <input
+              ref={fontSizeInputRef}
+              type="text"
+              inputMode="numeric"
+              value={fontSizeInput}
+              onMouseDown={() => {
+                // guarda la selección ANTES de perderla por el input
+                rememberRangeIfInside();
+                if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
+              }}
+              onChange={(e) => {
+                const v = e.target.value.replace(/[^\d]/g, '');
+                setFontSizeInput(v);
+
+                if (v !== '') {
+                  const n = Number(v);
+                  if (Number.isFinite(n)) {
+                    setFontSizePx(n);
+                    applySizeFromToolbar(n);
+                  }
+                }
+              }}
+              onKeyDown={(e) => {
+                // Enter solo cierra dropdown si estaba abierto / y regresa foco al editor si quieres
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  setSizeMenuOpen(false);
+                  contentRef.current?.focus();
+                }
+              }}
+              onBlur={() => {
+                if (!fontSizeInput.trim()) setFontSizeInput(String(fontSizePx));
+              }}
+              className="w-[86px] border rounded p-1 text-sm"
+              title="Tamaño (px)"
+              placeholder="14"
+            />
+
+            <span className="text-xs text-gray-500 select-none">px</span>
+          </div>
         </div>
 
         <div className="relative">
@@ -729,7 +1054,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                   min={1}
                   max={20}
                   value={tableRows}
-                  onChange={(e) => setTableRows(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+                  onChange={(e) => setTableRows(clamp(Number(e.target.value) || 1, 1, 20))}
                   className="w-full border rounded px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -740,16 +1065,12 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                   min={1}
                   max={20}
                   value={tableCols}
-                  onChange={(e) => setTableCols(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+                  onChange={(e) => setTableCols(clamp(Number(e.target.value) || 1, 1, 20))}
                   className="w-full border rounded px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <label className="inline-flex items-center gap-2 select-none">
-                <input
-                  type="checkbox"
-                  checked={tableHeader}
-                  onChange={(e) => setTableHeader(e.target.checked)}
-                />
+                <input type="checkbox" checked={tableHeader} onChange={(e) => setTableHeader(e.target.checked)} />
                 <span className="text-sm text-gray-700">Encabezado</span>
               </label>
             </div>
@@ -765,8 +1086,379 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           </div>
         </div>
       )}
+
+      {previewOpen && (
+  <FlutterPhonePreview
+    title={previewTitle}
+    html={previewHtml}
+    updatedAt={new Date().toISOString()} // o tu fecha real
+    dark={false} // puedes conectarlo a un toggle si quieres
+    logoSrc="/infectologia-logo.png" // pon tu logo real
+    pos={previewPos}
+    phoneW={PHONE_W}
+    phoneH={PHONE_H}
+    onClose={closePreview}
+    onCenter={centerPreview}
+    onDragStart={onDragStart}
+    onDragMove={onDragMove}
+    onDragEnd={onDragEnd}
+  />
+)}
     </div>
   );
 };
 
-export default ArticleEditor; 
+export default ArticleEditor;
+
+
+type FlutterPhonePreviewProps = {
+  title: string;
+  html: string;
+  updatedAt?: string;
+  dark?: boolean;
+  logoSrc?: string;
+
+  pos: { left: number; top: number };
+  phoneW: number;
+  phoneH: number;
+
+  onClose: () => void;
+  onCenter: () => void;
+
+  onDragStart: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onDragMove: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onDragEnd: (e: React.PointerEvent<HTMLDivElement>) => void;
+};
+
+const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
+  title,
+  html,
+  updatedAt,
+  dark = false,
+  logoSrc,
+  pos,
+  phoneW,
+  phoneH,
+  onClose,
+  onCenter,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+}) => {
+  const bg = dark ? '#0F1115' : '#F4F6F8';
+  const card = dark ? '#121417' : '#FFFFFF';
+  const text = dark ? '#FFFFFF' : '#111827';
+  const muted = dark ? 'rgba(255,255,255,.55)' : 'rgba(17,24,39,.45)';
+  const line = dark ? 'rgba(255,255,255,.10)' : 'rgba(17,24,39,.08)';
+  const searchBg = dark ? 'rgba(255,255,255,.06)' : '#FFFFFF';
+  const navBg = '#0B4A8B';
+  const navActive = '#F4B400'; // amarillito tipo tu screenshot
+  const navMuted = 'rgba(255,255,255,.65)';
+
+  const PHONE_RADIUS = 34;
+  const notchW = 170;
+  const notchH = 28;
+
+  return (
+    <div className="fixed z-[70]" style={{ left: pos.left, top: pos.top, width: phoneW }}>
+      {/* Barra drag (igual que ya tenías) */}
+      <div
+        className="flex items-center justify-between gap-2 px-3 py-2 rounded-t-2xl bg-black text-white cursor-grab active:cursor-grabbing select-none"
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragEnd}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Smartphone className="w-4 h-4 shrink-0" />
+          <div className="text-sm font-semibold truncate">Preview App</div>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <button
+            className="p-1.5 rounded hover:bg-white/10"
+            title="Centrar"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCenter();
+            }}
+          >
+            <Crosshair className="w-4 h-4" />
+          </button>
+
+          <button
+            className="p-1.5 rounded hover:bg-white/10"
+            title="Cerrar preview"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Marco */}
+      <div className="rounded-b-2xl border border-black/20 bg-black p-3 shadow-2xl">
+        <div
+          className="relative overflow-hidden"
+          style={{
+            borderRadius: PHONE_RADIUS,
+            background: bg,
+            height: phoneH,
+          }}
+        >
+          {/* Notch */}
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: 8,
+              transform: 'translateX(-50%)',
+              width: notchW,
+              height: notchH,
+              background: '#000',
+              borderBottomLeftRadius: 18,
+              borderBottomRightRadius: 18,
+              opacity: 0.92,
+              zIndex: 20,
+            }}
+          />
+
+          {/* Status bar spacing */}
+          <div style={{ height: 44 }} />
+
+          {/* Top bar (menu + logo + dark icon) */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '10px 14px',
+              gap: 10,
+              background: bg,
+            }}
+          >
+            <div
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                display: 'grid',
+                placeItems: 'center',
+                color: text,
+                background: dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)',
+              }}
+            >
+              {/* “hamburger” */}
+              <div style={{ width: 16 }}>
+                <div style={{ height: 2, background: text, opacity: 0.8, marginBottom: 3, borderRadius: 999 }} />
+                <div style={{ height: 2, background: text, opacity: 0.8, marginBottom: 3, borderRadius: 999 }} />
+                <div style={{ height: 2, background: text, opacity: 0.8, borderRadius: 999 }} />
+              </div>
+            </div>
+
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+              {logoSrc ? (
+                <img src={logoSrc} alt="logo" style={{ height: 20, objectFit: 'contain', opacity: dark ? 0.95 : 0.9 }} />
+              ) : (
+                <div style={{ fontWeight: 800, letterSpacing: 0.3, color: text, opacity: 0.85, fontSize: 12 }}>
+                  INFECTOLOGÍA
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                display: 'grid',
+                placeItems: 'center',
+                color: text,
+                background: dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)',
+              }}
+              title="Dark mode (solo visual)"
+            >
+              {/* luna */}
+              <div
+                style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: 999,
+                  border: `2px solid ${text}`,
+                  position: 'relative',
+                  opacity: 0.8,
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: -2,
+                    top: -2,
+                    width: 10,
+                    height: 10,
+                    borderRadius: 999,
+                    background: bg,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Search */}
+          <div style={{ padding: '0 14px 10px 14px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 12px',
+                borderRadius: 16,
+                background: searchBg,
+                border: `1px solid ${line}`,
+              }}
+            >
+              <div style={{ width: 18, height: 18, opacity: 0.5 }}>
+                {/* icono lupa simple */}
+                <div
+                  style={{
+                    width: 12,
+                    height: 12,
+                    border: `2px solid ${muted}`,
+                    borderRadius: 999,
+                    position: 'relative',
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: 8,
+                      height: 2,
+                      background: muted,
+                      bottom: -6,
+                      right: -6,
+                      transform: 'rotate(45deg)',
+                      borderRadius: 999,
+                    }}
+                  />
+                </div>
+              </div>
+              <div style={{ color: muted, fontSize: 13 }}>Buscar</div>
+            </div>
+          </div>
+
+          {/* Back + Title */}
+          <div style={{ padding: '6px 14px 0 14px', color: text }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 28, height: 28, display: 'grid', placeItems: 'center', opacity: 0.9 }}>
+                {/* flecha */}
+                <div
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderLeft: `2px solid ${text}`,
+                    borderBottom: `2px solid ${text}`,
+                    transform: 'rotate(45deg)',
+                    marginLeft: 4,
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{title || 'Sin título'}</div>
+            </div>
+          </div>
+
+          {/* Content area */}
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: 44 + 54 + 54 + 44, // status + topbar + search + title row (aprox)
+              bottom: 76, // bottom nav height
+              overflow: 'auto',
+              padding: '14px 18px 18px 18px',
+              color: text,
+            }}
+          >
+            {/* Tu HTML ya estilizado con .flutter-html */}
+            <div className="flutter-html" dangerouslySetInnerHTML={{ __html: html }} />
+
+            {/* Updated */}
+            <div style={{ marginTop: 22, fontSize: 11, color: muted }}>
+              {updatedAt ? `Actualizado: ${updatedAt}` : ''}
+            </div>
+          </div>
+
+          {/* Bottom nav */}
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 76,
+              background: navBg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-around',
+              paddingBottom: 8,
+            }}
+          >
+            <NavItem label="Guía" active />
+            <NavItem label="Inicio" />
+            <NavItem label="Calculadora" />
+            <NavItem label="Vacunas" />
+            {/* home indicator */}
+            <div
+              style={{
+                position: 'absolute',
+                left: '50%',
+                bottom: 6,
+                transform: 'translateX(-50%)',
+                width: 120,
+                height: 5,
+                borderRadius: 999,
+                background: 'rgba(255,255,255,.22)',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* estilos del nav item */}
+      <style>{`
+        .nav-item {
+          width: 78px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          font-size: 11px;
+          font-weight: 700;
+        }
+      `}</style>
+
+      {/* componente inline */}
+      {(() => null)()}
+    </div>
+  );
+
+  function NavItem({ label, active }: { label: string; active?: boolean }) {
+    return (
+      <div className="nav-item" style={{ color: active ? navActive : navMuted }}>
+        {/* icono cuadradito simple */}
+        <div
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 7,
+            border: `2px solid ${active ? navActive : navMuted}`,
+            opacity: active ? 1 : 0.85,
+          }}
+        />
+        <div>{label}</div>
+      </div>
+    );
+  }
+};
