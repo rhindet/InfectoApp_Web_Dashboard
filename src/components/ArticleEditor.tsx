@@ -21,6 +21,8 @@ import {
   AlignCenter,
   AlignRight,
   AlignJustify,
+  Minimize2,
+  Maximize2
 } from "lucide-react";
 import { Article } from "../types";
 
@@ -192,7 +194,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   const [textColor, setTextColor] = useState("#000000");
 
 
-    // ===============================
+  // ===============================
   // ✅ IMAGE RESIZE (affects preview + saved html)
   // ===============================
   const [imgToolOpen, setImgToolOpen] = useState(false);
@@ -239,7 +241,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   const PHONE_W = 380;
   const PHONE_H = 720;
 
-    function parseStyleSize(value: string | null | undefined) {
+  function parseStyleSize(value: string | null | undefined) {
     const v = (value || "").trim();
     if (!v) return "";
     return v;
@@ -424,7 +426,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     restoreRange();
   };
 
-    useEffect(() => {
+  useEffect(() => {
     const root = contentRef.current;
     if (!root) return;
 
@@ -1085,7 +1087,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     handleContentChange();
   };
 
-   const insertImageAtSelection = (src: string, alt = "") => {
+  const insertImageAtSelection = (src: string, alt = "") => {
     const el = contentRef.current;
     if (!el) return;
     el.focus();
@@ -1548,96 +1550,96 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           />
         </div>
 
-                  {imgToolOpen && (
-            <div
-              ref={imgToolRef}
-              className="absolute z-50 bg-white border rounded-lg shadow-lg p-2"
-              style={{ left: imgToolPos.left, top: imgToolPos.top, minWidth: 260 }}
-            >
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div className="text-xs font-semibold text-gray-700">Imagen</div>
+        {imgToolOpen && (
+          <div
+            ref={imgToolRef}
+            className="absolute z-50 bg-white border rounded-lg shadow-lg p-2"
+            style={{ left: imgToolPos.left, top: imgToolPos.top, minWidth: 260 }}
+          >
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="text-xs font-semibold text-gray-700">Imagen</div>
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-gray-100"
+                onClick={closeImgTool}
+                title="Cerrar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] text-gray-600 mb-1">Ancho (px o %)</label>
+                <input
+                  value={imgW}
+                  onChange={(e) => setImgW(e.target.value.replace(/[^\d%]/g, ""))}
+                  className="w-full border rounded px-2 py-1 text-sm"
+                  placeholder="Ej: 320 ó 60%"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-600 mb-1">Alto (px)</label>
+                <input
+                  value={imgH}
+                  onChange={(e) => setImgH(e.target.value.replace(/[^\d]/g, ""))}
+                  className="w-full border rounded px-2 py-1 text-sm"
+                  placeholder="auto"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between mt-2 gap-2">
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  className="p-1 rounded hover:bg-gray-100"
-                  onClick={closeImgTool}
-                  title="Cerrar"
+                  className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                  onClick={() => setImgPercent(25)}
                 >
-                  <X className="w-4 h-4" />
+                  25%
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                  onClick={() => setImgPercent(50)}
+                >
+                  50%
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                  onClick={() => setImgPercent(75)}
+                >
+                  75%
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                  onClick={() => setImgPercent(100)}
+                >
+                  100%
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] text-gray-600 mb-1">Ancho (px o %)</label>
-                  <input
-                    value={imgW}
-                    onChange={(e) => setImgW(e.target.value.replace(/[^\d%]/g, ""))}
-                    className="w-full border rounded px-2 py-1 text-sm"
-                    placeholder="Ej: 320 ó 60%"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-gray-600 mb-1">Alto (px)</label>
-                  <input
-                    value={imgH}
-                    onChange={(e) => setImgH(e.target.value.replace(/[^\d]/g, ""))}
-                    className="w-full border rounded px-2 py-1 text-sm"
-                    placeholder="auto"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between mt-2 gap-2">
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
-                    onClick={() => setImgPercent(25)}
-                  >
-                    25%
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
-                    onClick={() => setImgPercent(50)}
-                  >
-                    50%
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
-                    onClick={() => setImgPercent(75)}
-                  >
-                    75%
-                  </button>
-                  <button
-                    type="button"
-                    className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
-                    onClick={() => setImgPercent(100)}
-                  >
-                    100%
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
-                    onClick={resetImgSize}
-                  >
-                    Reset
-                  </button>
-                  <button
-                    type="button"
-                    className="px-3 py-1 rounded text-xs bg-blue-600 text-white hover:bg-blue-700"
-                    onClick={applyImgSize}
-                  >
-                    Aplicar
-                  </button>
-                </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                  onClick={resetImgSize}
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1 rounded text-xs bg-blue-600 text-white hover:bg-blue-700"
+                  onClick={applyImgSize}
+                >
+                  Aplicar
+                </button>
               </div>
             </div>
-          )}
+          </div>
+        )}
       </div>
 
       {tableModalOpen && (
@@ -1773,6 +1775,8 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
   const notchW = 170;
   const notchH = 28;
 
+  const [minimized, setMinimized] = useState(false);
+
   return (
     <div className="fixed z-[70]" style={{ left: pos.left, top: pos.top, width: phoneW }}>
       <div
@@ -1788,55 +1792,68 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="p-1.5 rounded hover:bg-white/10"
-            title="Refrescar preview"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRefresh();
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              <path
-                d="M20 4v6h-6"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+  {/* ✅ Minimizar / Maximizar */}
+  <button
+    type="button"
+    className="p-1.5 rounded hover:bg-white/10"
+    title={minimized ? "Maximizar" : "Minimizar"}
+    onPointerDown={(e) => e.stopPropagation()}
+    onClick={(e) => {
+      e.stopPropagation();
+      setMinimized((v) => !v);
+    }}
+  >
+    {minimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+  </button>
 
-          <button
-            type="button"
-            className="p-1.5 rounded hover:bg-white/10"
-            title="Centrar"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onCenter();
-            }}
-          >
-            <Crosshair className="w-4 h-4" />
-          </button>
+  {/* ✅ Refrescar */}
+  <button
+    type="button"
+    className="p-1.5 rounded hover:bg-white/10"
+    title="Refrescar preview"
+    onPointerDown={(e) => e.stopPropagation()}
+    onClick={(e) => {
+      e.stopPropagation();
+      onRefresh();
+    }}
+  >
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  </button>
 
-          <button
-            type="button"
-            className="p-1.5 rounded hover:bg-white/10"
-            title="Cerrar preview"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose();
-            }}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+  {/* Centrar */}
+  <button
+    type="button"
+    className="p-1.5 rounded hover:bg-white/10"
+    title="Centrar"
+    onPointerDown={(e) => e.stopPropagation()}
+    onClick={(e) => {
+      e.stopPropagation();
+      onCenter();
+    }}
+  >
+    <Crosshair className="w-4 h-4" />
+  </button>
+
+  {/* Cerrar */}
+  <button
+    type="button"
+    className="p-1.5 rounded hover:bg-white/10"
+    title="Cerrar preview"
+    onPointerDown={(e) => e.stopPropagation()}
+    onClick={(e) => {
+      e.stopPropagation();
+      onClose();
+    }}
+  >
+    <X className="w-4 h-4" />
+  </button>
+</div>
+
       </div>
+{!minimized && (
 
       <div className="rounded-b-2xl border border-black/20 bg-black p-3 shadow-2xl">
         <div className="relative overflow-hidden" style={{ borderRadius: PHONE_RADIUS, background: bg, height: phoneH }}>
@@ -2024,7 +2041,7 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
             />
           </div>
         </div>
-      </div>
+      </div> )}
 
       <style>{`
         .nav-item {
