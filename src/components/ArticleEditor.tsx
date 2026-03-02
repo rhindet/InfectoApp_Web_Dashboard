@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+// ArticleEditor.tsx
+import React, { useEffect, useRef, useState } from "react";
 import {
   Bold,
   Italic,
@@ -16,8 +17,8 @@ import {
   Smartphone,
   Crosshair,
   ChevronDown,
-} from 'lucide-react';
-import { Article } from '../types';
+} from "lucide-react";
+import { Article } from "../types";
 
 interface ArticleEditorProps {
   article?: Article;
@@ -37,19 +38,108 @@ type DragState = {
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
+// ===============================
+// ✅ FONT SIZE: anti-nesting helpers
+// ===============================
+
+function isFontSizeSpan(el: Element): el is HTMLSpanElement {
+  if (!(el instanceof HTMLSpanElement)) return false;
+  const fs = (el.style?.fontSize || "").trim();
+  return Boolean(fs);
+}
+
+function unwrapElement(el: HTMLElement) {
+  const parent = el.parentNode;
+  if (!parent) return;
+  while (el.firstChild) parent.insertBefore(el.firstChild, el);
+  parent.removeChild(el);
+}
+
+function unwrapNestedFontSizeSpansWithin(container: HTMLElement) {
+  const nested = Array.from(container.querySelectorAll("span[style*='font-size']")) as HTMLSpanElement[];
+  // unwrap inner-to-outer
+  for (let i = nested.length - 1; i >= 0; i--) {
+    const s = nested[i];
+    const parent = s.parentElement;
+    if (parent && parent !== container && parent.closest("span[style*='font-size']")) {
+      unwrapElement(s);
+    }
+  }
+}
+
+function mergeAdjacentFontSizeSpans(root: HTMLElement) {
+  const spans = Array.from(root.querySelectorAll("span[style*='font-size']")) as HTMLSpanElement[];
+
+  for (const s of spans) {
+    if (!s.parentNode) continue;
+
+    // if contains nested font-size spans, unwrap them first
+    if (s.querySelector("span[style*='font-size']")) {
+      unwrapNestedFontSizeSpansWithin(s);
+    }
+
+    // merge with next siblings if same size
+    let next = s.nextSibling;
+    while (next && next.nodeType === Node.TEXT_NODE && (next.textContent ?? "") === "") {
+      next = next.nextSibling;
+    }
+
+    while (next instanceof HTMLSpanElement && isFontSizeSpan(next) && next.style.fontSize === s.style.fontSize) {
+      while (next.firstChild) s.appendChild(next.firstChild);
+      const toRemove = next;
+      next = next.nextSibling;
+      toRemove.remove();
+    }
+
+    if (!s.textContent?.length && !s.children.length) s.remove();
+  }
+}
+
+function cleanupAllFontSizeSpans(root: HTMLElement) {
+  const spans = Array.from(root.querySelectorAll("span[style*='font-size']")) as HTMLSpanElement[];
+  for (const s of spans) {
+    if (s.querySelector("span[style*='font-size']")) unwrapNestedFontSizeSpansWithin(s);
+  }
+  mergeAdjacentFontSizeSpans(root);
+}
+
+// remove any font-size spans inside a DocumentFragment
+function stripFontSizeSpansFromFragment(frag: DocumentFragment) {
+  const tmp = document.createElement("div");
+  tmp.appendChild(frag.cloneNode(true));
+  const spans = Array.from(tmp.querySelectorAll("span[style*='font-size']")) as HTMLSpanElement[];
+  for (const s of spans) unwrapElement(s);
+
+  const cleaned = document.createDocumentFragment();
+  while (tmp.firstChild) cleaned.appendChild(tmp.firstChild);
+  return cleaned;
+}
+
+function closestFontSizeSpanFromSelection(root: HTMLElement): HTMLSpanElement | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const node = sel.getRangeAt(0).startContainer;
+  const el = node.nodeType === 1 ? (node as Element) : node.parentElement;
+  if (!el) return null;
+  const hit = el.closest("span[style*='font-size']") as HTMLSpanElement | null;
+  if (!hit) return null;
+  return root.contains(hit) ? hit : null;
+}
+
+
 const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel, onUpdate }) => {
-  const [title, setTitle] = useState<string>(article?.tema ?? '');
-  const [content, setContent] = useState<string>(article?.contenidos?.[0] ?? '');
+  const [title, setTitle] = useState<string>(article?.tema ?? "");
+  const [content, setContent] = useState<string>(article?.contenidos?.[0] ?? "");
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const [highlightColor, setHighlightColor] = useState('#FFF3CD');
-  const [borderColor, setBorderColor] = useState('#000000');
-  const [textColor, setTextColor] = useState('#000000');
+  const [highlightColor, setHighlightColor] = useState("#FFF3CD");
+  const [borderColor, setBorderColor] = useState("#000000");
+  const [textColor, setTextColor] = useState("#000000");
 
   // ✅ Tamaño actual (px)
   const [fontSizePx, setFontSizePx] = useState<number>(14);
   // ✅ Input controlado como texto para permitir escribir "cualquier número"
-  const [fontSizeInput, setFontSizeInput] = useState<string>('14');
+  const [fontSizeInput, setFontSizeInput] = useState<string>("14");
 
   const lastRangeRef = useRef<Range | null>(null);
   // ✅ Range que se usa específicamente para acciones del toolbar (input tamaño / dropdown)
@@ -65,8 +155,8 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
   // ✅ Preview (celular flotante)
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewTitle, setPreviewTitle] = useState('');
-  const [previewHtml, setPreviewHtml] = useState('');
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [previewHtml, setPreviewHtml] = useState("");
 
   // posición del panel flotante
   const [previewPos, setPreviewPos] = useState<{ left: number; top: number }>({ left: 24, top: 120 });
@@ -124,7 +214,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     let node: ChildNode | null = root.firstChild;
     let currentP: HTMLParagraphElement | null = null;
 
-    const isBlockKeep = (el: HTMLElement) => ['P', 'UL', 'OL', 'TABLE', 'PRE', 'BLOCKQUOTE'].includes(el.tagName);
+    const isBlockKeep = (el: HTMLElement) => ["P", "UL", "OL", "TABLE", "PRE", "BLOCKQUOTE"].includes(el.tagName);
 
     while (node) {
       const next = node.nextSibling;
@@ -132,7 +222,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       if (node.nodeType === Node.TEXT_NODE) {
         const txtNode = node as Text;
         if (!currentP) {
-          currentP = document.createElement('p');
+          currentP = document.createElement("p");
           root.insertBefore(currentP, txtNode);
         }
         currentP.appendChild(txtNode);
@@ -140,14 +230,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         const el = node as HTMLElement;
         const tag = el.tagName;
 
-        if (tag === 'BR') {
+        if (tag === "BR") {
           if (!currentP) {
-            currentP = document.createElement('p');
+            currentP = document.createElement("p");
             root.insertBefore(currentP, el);
           }
           currentP.appendChild(el);
-        } else if (['DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(tag)) {
-          const p = document.createElement('p');
+        } else if (["DIV", "H1", "H2", "H3", "H4", "H5", "H6"].includes(tag)) {
+          const p = document.createElement("p");
           while (el.firstChild) p.appendChild(el.firstChild);
           root.replaceChild(p, el);
           currentP = null;
@@ -155,7 +245,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           currentP = null;
         } else {
           if (!currentP) {
-            currentP = document.createElement('p');
+            currentP = document.createElement("p");
             root.insertBefore(currentP, el);
           }
           currentP.appendChild(el);
@@ -166,8 +256,8 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
 
     if (root.childElementCount === 0) {
-      const p = document.createElement('p');
-      p.innerHTML = '<br>';
+      const p = document.createElement("p");
+      p.innerHTML = "<br>";
       root.appendChild(p);
     }
 
@@ -175,15 +265,15 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   };
 
   useEffect(() => {
-    setTitle(article?.tema ?? '');
-    const initial = article?.contenidos?.[0] ?? '';
+    setTitle(article?.tema ?? "");
+    const initial = article?.contenidos?.[0] ?? "";
     setContent(initial);
     if (contentRef.current) {
-      contentRef.current.innerHTML = initial || '<p><br></p>';
+      contentRef.current.innerHTML = initial || "<p><br></p>";
       normalizeTopLevelToParagraphs();
     }
     try {
-      document.execCommand('defaultParagraphSeparator', false, 'p');
+      document.execCommand("defaultParagraphSeparator", false, "p");
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [article]);
@@ -194,13 +284,13 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     const onKeyUp = () => rememberRangeIfInside();
     const onMouseUp = () => rememberRangeIfInside();
     const onSelChange = () => rememberRangeIfInside();
-    el.addEventListener('keyup', onKeyUp);
-    el.addEventListener('mouseup', onMouseUp);
-    document.addEventListener('selectionchange', onSelChange);
+    el.addEventListener("keyup", onKeyUp);
+    el.addEventListener("mouseup", onMouseUp);
+    document.addEventListener("selectionchange", onSelChange);
     return () => {
-      el.removeEventListener('keyup', onKeyUp);
-      el.removeEventListener('mouseup', onMouseUp);
-      document.removeEventListener('selectionchange', onSelChange);
+      el.removeEventListener("keyup", onKeyUp);
+      el.removeEventListener("mouseup", onMouseUp);
+      document.removeEventListener("selectionchange", onSelChange);
     };
   }, []);
 
@@ -214,20 +304,52 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       }
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSizeMenuOpen(false);
+      if (e.key === "Escape") setSizeMenuOpen(false);
     };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
     };
   }, [sizeMenuOpen]);
 
   const handleContentChange = () => {
-    normalizeTopLevelToParagraphs();
-    if (contentRef.current) setContent(contentRef.current.innerHTML);
-  };
+  normalizeTopLevelToParagraphs();
+  if (contentRef.current) {
+    cleanupAllFontSizeSpans(contentRef.current); // ✅ evita acumulación/nesting
+    setContent(contentRef.current.innerHTML);
+  }
+};
+
+function getSingleSelectedFontSizeSpan(range: Range, root: HTMLElement): HTMLSpanElement | null {
+  // Caso 1: selección exacta de un nodo <span style="font-size:...">
+  const a = range.startContainer;
+  const b = range.endContainer;
+
+  if (a === b && range.startContainer.nodeType === Node.ELEMENT_NODE) {
+    const el = range.startContainer as Element;
+    const child = el.childNodes[range.startOffset];
+    if (child instanceof HTMLSpanElement && isFontSizeSpan(child) && root.contains(child)) return child;
+  }
+
+  // Caso 2: selection dentro del mismo font-size span (aunque sea selection parcial)
+  const startEl = (range.startContainer.nodeType === 1 ? (range.startContainer as Element) : range.startContainer.parentElement) as
+    | Element
+    | null;
+  const endEl = (range.endContainer.nodeType === 1 ? (range.endContainer as Element) : range.endContainer.parentElement) as
+    | Element
+    | null;
+
+  if (!startEl || !endEl) return null;
+
+  const s1 = startEl.closest("span[style*='font-size']") as HTMLSpanElement | null;
+  const s2 = endEl.closest("span[style*='font-size']") as HTMLSpanElement | null;
+
+  if (s1 && s1 === s2 && root.contains(s1)) return s1;
+
+  return null;
+}
 
   const formatText = (command: string, value?: string) => {
     const el = contentRef.current;
@@ -237,7 +359,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
     document.execCommand(command, false, value);
 
-    if (command === 'insertUnorderedList' || command === 'insertOrderedList') {
+    if (command === "insertUnorderedList" || command === "insertOrderedList") {
       ensureListStyles();
       setTimeout(() => normalizeParagraphAfterList(), 0);
     }
@@ -252,16 +374,16 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     let node: Node | null = sel.getRangeAt(0).startContainer;
 
     while (node && node !== contentRef.current) {
-      if (node instanceof HTMLElement && (node.tagName === 'UL' || node.tagName === 'OL')) {
-        const isOl = node.tagName === 'OL';
-        if (!node.getAttribute('style')) {
+      if (node instanceof HTMLElement && (node.tagName === "UL" || node.tagName === "OL")) {
+        const isOl = node.tagName === "OL";
+        if (!node.getAttribute("style")) {
           node.setAttribute(
-            'style',
-            `${isOl ? 'list-style: decimal;' : 'list-style: disc;'} padding-left: 1.25rem; margin: 0.5rem 0;`
+            "style",
+            `${isOl ? "list-style: decimal;" : "list-style: disc;"} padding-left: 1.25rem; margin: 0.5rem 0;`
           );
         }
-        node.querySelectorAll('li').forEach((li) => {
-          if (!(li as HTMLElement).innerHTML.trim()) (li as HTMLElement).innerHTML = '&nbsp;';
+        node.querySelectorAll("li").forEach((li) => {
+          if (!(li as HTMLElement).innerHTML.trim()) (li as HTMLElement).innerHTML = "&nbsp;";
         });
         break;
       }
@@ -275,10 +397,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     let node: Node | null = sel.getRangeAt(0).startContainer;
 
     while (node && node !== contentRef.current) {
-      if (node instanceof HTMLElement && node.tagName === 'P') {
-        (node as HTMLElement).style.marginLeft = '0';
-        (node as HTMLElement).style.paddingLeft = '0';
-        (node as HTMLElement).style.textIndent = '0';
+      if (node instanceof HTMLElement && node.tagName === "P") {
+        (node as HTMLElement).style.marginLeft = "0";
+        (node as HTMLElement).style.paddingLeft = "0";
+        (node as HTMLElement).style.textIndent = "0";
         break;
       }
       node = node.parentNode as Node | null;
@@ -287,22 +409,22 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
   function escapeHtml(s: string) {
     return s
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault();
-    const text = e.clipboardData?.getData('text/plain') ?? '';
+    const text = e.clipboardData?.getData("text/plain") ?? "";
     const el = contentRef.current;
     if (!el) return;
     el.focus();
     if (!restoreRange()) placeCaretAtEnd(el);
     if (text) {
-      document.execCommand('insertText', false, text);
+      document.execCommand("insertText", false, text);
       normalizeTopLevelToParagraphs();
       handleContentChange();
     }
@@ -310,29 +432,29 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    const text = e.dataTransfer.getData('text/plain') || '';
+    const text = e.dataTransfer.getData("text/plain") || "";
     if (text) {
       const el = contentRef.current;
       if (!el) return;
       el.focus();
       if (!restoreRange()) placeCaretAtEnd(el);
-      document.execCommand('insertText', false, text);
+      document.execCommand("insertText", false, text);
       normalizeTopLevelToParagraphs();
       handleContentChange();
     }
   };
 
   function cleanHtml(dirty: string): string {
-    if (!dirty) return '';
-    const raw = dirty.replace(/\uFEFF/g, '').trim();
+    if (!dirty) return "";
+    const raw = dirty.replace(/\uFEFF/g, "").trim();
     const parser = new DOMParser();
-    const doc = parser.parseFromString(`<div id="root">${raw}</div>`, 'text/html');
-    const root = doc.getElementById('root') as HTMLElement;
+    const doc = parser.parseFromString(`<div id="root">${raw}</div>`, "text/html");
+    const root = doc.getElementById("root") as HTMLElement;
     if (!root) return raw;
 
-    doc.querySelectorAll('meta, title, style, script, link').forEach((n) => n.remove());
+    doc.querySelectorAll("meta, title, style, script, link").forEach((n) => n.remove());
 
-    root.querySelectorAll('h1, h2, h3').forEach((h) => {
+    root.querySelectorAll("h1, h2, h3").forEach((h) => {
       if (h === root.firstElementChild && h === root.lastElementChild) {
         const frag = doc.createDocumentFragment();
         while (h.firstChild) frag.appendChild(h.firstChild);
@@ -340,55 +462,55 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       }
     });
 
-    root.querySelectorAll<HTMLElement>('*').forEach((el) => {
-      if (el.className && /(^|\s)Mso[\w-]*/i.test(el.className)) el.removeAttribute('class');
+    root.querySelectorAll<HTMLElement>("*").forEach((el) => {
+      if (el.className && /(^|\s)Mso[\w-]*/i.test(el.className)) el.removeAttribute("class");
 
-      if (el.hasAttribute('style')) {
-        const css = el.getAttribute('style') || '';
+      if (el.hasAttribute("style")) {
+        const css = el.getAttribute("style") || "";
         const cleaned = css
-          .split(';')
+          .split(";")
           .map((s) => s.trim())
-          .filter((s) => s && !s.startsWith('--tw-'))
-          .join('; ');
-        if (cleaned) el.setAttribute('style', cleaned);
-        else el.removeAttribute('style');
+          .filter((s) => s && !s.startsWith("--tw-"))
+          .join("; ");
+        if (cleaned) el.setAttribute("style", cleaned);
+        else el.removeAttribute("style");
       }
 
-      if (el.tagName === 'SPAN' && el.textContent?.trim() === '' && !el.children.length) el.remove();
+      if (el.tagName === "SPAN" && el.textContent?.trim() === "" && !el.children.length) el.remove();
     });
 
-    root.querySelectorAll('ul, ol').forEach((list) => {
-      if (!list.querySelector('li')) list.remove();
+    root.querySelectorAll("ul, ol").forEach((list) => {
+      if (!list.querySelector("li")) list.remove();
     });
 
-    root.querySelectorAll('img[src]').forEach((img: Element) => {
-      const src = (img as HTMLImageElement).getAttribute('src') || '';
+    root.querySelectorAll("img[src]").forEach((img: Element) => {
+      const src = (img as HTMLImageElement).getAttribute("src") || "";
       if (/^javascript:/i.test(src)) (img as HTMLElement).remove();
     });
 
     root.innerHTML = root.innerHTML
-      .replace(/(&nbsp;|\s)+<\/(p|li)>/gi, '</$2>')
-      .replace(/(<p>\s*<\/p>)+/gi, '<p><br></p>');
+      .replace(/(&nbsp;|\s)+<\/(p|li)>/gi, "</$2>")
+      .replace(/(<p>\s*<\/p>)+/gi, "<p><br></p>");
 
-    const tempHost = document.createElement('div');
+    const tempHost = document.createElement("div");
     tempHost.innerHTML = root.innerHTML;
     const top = tempHost;
 
     let node: ChildNode | null = top.firstChild;
     let currentP: HTMLParagraphElement | null = null;
 
-    const isBlockKeep = (el: HTMLElement) => ['P', 'UL', 'OL', 'TABLE', 'PRE', 'BLOCKQUOTE'].includes(el.tagName);
+    const isBlockKeep = (el: HTMLElement) => ["P", "UL", "OL", "TABLE", "PRE", "BLOCKQUOTE"].includes(el.tagName);
 
     while (node) {
       const next = node.nextSibling;
 
       if (node.nodeType === Node.TEXT_NODE) {
-        const txt = node.textContent ?? '';
-        if (txt.trim() === '') {
+        const txt = node.textContent ?? "";
+        if (txt.trim() === "") {
           top.removeChild(node);
         } else {
           if (!currentP) {
-            currentP = document.createElement('p');
+            currentP = document.createElement("p");
             top.insertBefore(currentP, node);
           }
           currentP.appendChild(node);
@@ -397,14 +519,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         const el = node as HTMLElement;
         const tag = el.tagName;
 
-        if (tag === 'BR') {
+        if (tag === "BR") {
           if (!currentP) {
-            currentP = document.createElement('p');
+            currentP = document.createElement("p");
             top.insertBefore(currentP, el);
           }
           currentP.appendChild(el);
-        } else if (['DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(tag)) {
-          const p = document.createElement('p');
+        } else if (["DIV", "H1", "H2", "H3", "H4", "H5", "H6"].includes(tag)) {
+          const p = document.createElement("p");
           while (el.firstChild) p.appendChild(el.firstChild);
           top.replaceChild(p, el);
           currentP = null;
@@ -412,7 +534,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           currentP = null;
         } else {
           if (!currentP) {
-            currentP = document.createElement('p');
+            currentP = document.createElement("p");
             top.insertBefore(currentP, el);
           }
           currentP.appendChild(el);
@@ -422,10 +544,10 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       node = next;
     }
 
-    top.querySelectorAll('p').forEach((p) => {
-      const onlyWhitespace = !(p.textContent ?? '').trim();
+    top.querySelectorAll("p").forEach((p) => {
+      const onlyWhitespace = !(p.textContent ?? "").trim();
       const noChildren = p.children.length === 0;
-      if (onlyWhitespace && noChildren) p.innerHTML = '<br>';
+      if (onlyWhitespace && noChildren) p.innerHTML = "<br>";
     });
 
     return top.innerHTML.trim();
@@ -434,66 +556,112 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   function addFlutterSpanAttrs(html: string): string {
     if (!html) return html;
     const parser = new DOMParser();
-    const doc = parser.parseFromString(`<div id="root">${html}</div>`, 'text/html');
-    const root = doc.getElementById('root') as HTMLElement;
+    const doc = parser.parseFromString(`<div id="root">${html}</div>`, "text/html");
+    const root = doc.getElementById("root") as HTMLElement;
     if (!root) return html;
 
-    root.querySelectorAll('span[style]').forEach((span) => {
-      const style = (span.getAttribute('style') || '').toLowerCase();
-      if ((style.includes('border:') || style.includes('border-width')) && !span.hasAttribute('data-border')) {
-        span.setAttribute('data-border', '1');
+    root.querySelectorAll("span[style]").forEach((span) => {
+      const style = (span.getAttribute("style") || "").toLowerCase();
+      if ((style.includes("border:") || style.includes("border-width")) && !span.hasAttribute("data-border")) {
+        span.setAttribute("data-border", "1");
       }
-      if (style.includes('background-color') && !span.hasAttribute('data-highlight')) {
-        span.setAttribute('data-highlight', '1');
+      if (style.includes("background-color") && !span.hasAttribute("data-highlight")) {
+        span.setAttribute("data-highlight", "1");
       }
     });
 
     return root.innerHTML;
   }
 
-  const applyTextColor = () => document.execCommand('foreColor', false, textColor);
+  const applyTextColor = () => document.execCommand("foreColor", false, textColor);
 
   // ✅ aplica tamaño y DEVUELVE el range resultante (para seguir aplicando sobre el mismo texto)
-  const applyFontSizePx = (px: number, rangeOverride?: Range | null): Range | null => {
-    const el = contentRef.current;
-    if (!el) return null;
+  // ✅ aplica tamaño y DEVUELVE el range resultante (para seguir aplicando sobre el mismo texto)
+// ✅ FIX: no anida spans -> sobreescribe o envuelve limpio
+const applyFontSizePx = (px: number, rangeOverride?: Range | null): Range | null => {
+  const el = contentRef.current;
+  if (!el) return null;
 
-    const size = clamp(px, 1, 500);
+  const size = clamp(px, 1, 500);
 
-    if (!restoreRange(rangeOverride ?? null)) {
-      if (!restoreRange()) placeCaretAtEnd(el);
-    }
+  // intenta restaurar selección: prioridad rangeOverride -> lastRange
+  if (!restoreRange(rangeOverride ?? null)) {
+    if (!restoreRange()) placeCaretAtEnd(el);
+  }
 
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return null;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
 
-    const range = sel.getRangeAt(0);
+  const range = sel.getRangeAt(0);
 
-    if (range.collapsed) {
-      document.execCommand('insertHTML', false, `<span style="font-size:${size}px;">\u200B</span>`);
-      normalizeTopLevelToParagraphs();
+  // ✅ COLLAPSED: si estás dentro de un font-size span, solo cambia ese span
+  if (range.collapsed) {
+    const currentSpan = closestFontSizeSpanFromSelection(el);
+    if (currentSpan) {
+      currentSpan.style.fontSize = `${size}px`;
+      unwrapNestedFontSizeSpansWithin(currentSpan);
+      cleanupAllFontSizeSpans(el);
       handleContentChange();
-
       const sel2 = window.getSelection();
       return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
     }
 
-    const frag = range.extractContents();
-    const wrapper = document.createElement('span');
-    wrapper.style.fontSize = `${size}px`;
-    wrapper.appendChild(frag);
-    range.insertNode(wrapper);
-
-    sel.removeAllRanges();
-    const newRange = document.createRange();
-    newRange.selectNodeContents(wrapper);
-    sel.addRange(newRange);
-
+    // si no estás dentro de span, inserta uno con ZWSP (marcador)
+    document.execCommand("insertHTML", false, `<span style="font-size:${size}px;">\u200B</span>`);
     normalizeTopLevelToParagraphs();
+    cleanupAllFontSizeSpans(el);
     handleContentChange();
 
-    return newRange.cloneRange();
-  };
+    const sel2 = window.getSelection();
+    return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
+  }
+
+// ✅ NON-COLLAPSED: si ya es UN span con font-size seleccionado -> solo cambia ese span
+const single = getSingleSelectedFontSizeSpan(range, el);
+if (single) {
+  single.style.fontSize = `${size}px`;
+  unwrapNestedFontSizeSpansWithin(single);
+  cleanupAllFontSizeSpans(el);
+  handleContentChange();
+
+  // Mantén seleccionado el contenido del mismo span
+  sel.removeAllRanges();
+  const r2 = document.createRange();
+  r2.selectNodeContents(single);
+  sel.addRange(r2);
+  return r2.cloneRange();
+}
+
+// ✅ Caso general: wrap limpio
+const extracted = range.extractContents();
+const cleanedFrag = stripFontSizeSpansFromFragment(extracted);
+
+const wrapper = document.createElement("span");
+wrapper.style.fontSize = `${size}px`;
+wrapper.appendChild(cleanedFrag);
+
+range.insertNode(wrapper);
+
+// 🔥 Si el wrapper quedó dentro de otro font-size span, NO anides: sube el estilo al padre y unwrap
+const parentFs = wrapper.parentElement?.closest("span[style*='font-size']") as HTMLSpanElement | null;
+if (parentFs && parentFs !== wrapper) {
+  parentFs.style.fontSize = `${size}px`;
+  unwrapElement(wrapper);
+  unwrapNestedFontSizeSpansWithin(parentFs);
+} else {
+  unwrapNestedFontSizeSpansWithin(wrapper);
+}
+
+sel.removeAllRanges();
+const newRange = document.createRange();
+newRange.selectNodeContents(parentFs ?? wrapper);
+sel.addRange(newRange);
+
+normalizeTopLevelToParagraphs();
+cleanupAllFontSizeSpans(el);
+handleContentChange();
+
+return newRange.cloneRange();}
 
   // ✅ aplica tamaño desde toolbar SIN perder el cursor del input (puedes seguir tecleando)
   const applySizeFromToolbar = (n: number) => {
@@ -526,15 +694,15 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     rows = clamp(rows, 1, 20);
     cols = clamp(cols, 1, 20);
 
-    const makeCells = (count: number, tag: 'th' | 'td') =>
+    const makeCells = (count: number, tag: "th" | "td") =>
       Array.from({ length: count })
         .map(() => `<${tag}> </${tag}>`)
-        .join('');
+        .join("");
 
-    const thead = withHeader ? `<thead><tr>${makeCells(cols, 'th')}</tr></thead>` : '';
+    const thead = withHeader ? `<thead><tr>${makeCells(cols, "th")}</tr></thead>` : "";
     const bodyRows = Array.from({ length: rows })
-      .map(() => `<tr>${makeCells(cols, 'td')}</tr>`)
-      .join('');
+      .map(() => `<tr>${makeCells(cols, "td")}</tr>`)
+      .join("");
 
     const tableHtml = `
       <table style="border-collapse:collapse; width:100%; margin:8px 0;">
@@ -544,7 +712,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       <p><br></p>
     `.trim();
 
-    document.execCommand('insertHTML', false, tableHtml);
+    document.execCommand("insertHTML", false, tableHtml);
 
     const selection = window.getSelection();
     if (selection && el.lastChild instanceof HTMLElement) {
@@ -559,7 +727,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
   const handleSave = () => {
     const tema = title.trim();
-    const htmlRaw = (contentRef.current?.innerHTML ?? '').trim();
+    const htmlRaw = (contentRef.current?.innerHTML ?? "").trim();
     if (!tema || !htmlRaw) return;
 
     const html = cleanHtml(htmlRaw);
@@ -587,7 +755,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   };
 
   function toRgbString(input: string): string {
-    const tmp = document.createElement('span');
+    const tmp = document.createElement("span");
     tmp.style.backgroundColor = input;
     document.body.appendChild(tmp);
     const rgb = getComputedStyle(tmp).backgroundColor;
@@ -626,18 +794,18 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     const range = sel.getRangeAt(0);
 
     if (range.collapsed) {
-      document.execCommand('backColor', false, highlightColor);
+      document.execCommand("backColor", false, highlightColor);
       handleContentChange();
       return;
     }
 
     const targetRgb = toRgbString(highlightColor);
-    const currentCmdVal = document.queryCommandValue('hiliteColor') || document.queryCommandValue('backColor') || '';
-    const currentRgb = currentCmdVal ? toRgbString(currentCmdVal) : '';
+    const currentCmdVal = document.queryCommandValue("hiliteColor") || document.queryCommandValue("backColor") || "";
+    const currentRgb = currentCmdVal ? toRgbString(currentCmdVal) : "";
     const shouldRemove = currentRgb && currentRgb === targetRgb;
 
     if (!shouldRemove) {
-      document.execCommand('backColor', false, highlightColor);
+      document.execCommand("backColor", false, highlightColor);
       handleContentChange();
       return;
     }
@@ -645,31 +813,31 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     forEachElementInRange(range, el, (node) => {
       const bg = getComputedStyle(node).backgroundColor;
       if (bg && toRgbString(bg) === targetRgb) {
-        const style = node.getAttribute('style') || '';
-        if (style.includes('background-color')) {
+        const style = node.getAttribute("style") || "";
+        if (style.includes("background-color")) {
           const cleaned = style
-            .split(';')
+            .split(";")
             .map((s) => s.trim())
             .filter((s) => s && !/^background-color\s*:/i.test(s))
-            .join('; ');
-          if (cleaned) node.setAttribute('style', cleaned);
-          else node.removeAttribute('style');
+            .join("; ");
+          if (cleaned) node.setAttribute("style", cleaned);
+          else node.removeAttribute("style");
         }
       }
     });
 
-    document.execCommand('backColor', false, 'transparent');
+    document.execCommand("backColor", false, "transparent");
     handleContentChange();
   };
 
-  const insertImageAtSelection = (src: string, alt = '') => {
+  const insertImageAtSelection = (src: string, alt = "") => {
     const el = contentRef.current;
     if (!el) return;
     el.focus();
     if (!restoreRange()) placeCaretAtEnd(el);
 
     const imgHtml = `<img src="${src}" alt="${escapeHtml(alt)}" style="max-width:100%;height:auto;" />`;
-    document.execCommand('insertHTML', false, `<p>${imgHtml}</p><p><br></p>`);
+    document.execCommand("insertHTML", false, `<p>${imgHtml}</p><p><br></p>`);
     normalizeTopLevelToParagraphs();
     handleContentChange();
   };
@@ -683,27 +851,32 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     });
 
   const handleImageFile = async (file: File) => {
-    if (!file.type.startsWith('image/')) return;
+    if (!file.type.startsWith("image/")) return;
     const dataUrl = await readFileAsDataURL(file);
     insertImageAtSelection(dataUrl, file.name);
   };
 
   const insertImageFromUrl = () => {
-    const url = window.prompt('Pega la URL de la imagen:')?.trim();
+    const url = window.prompt("Pega la URL de la imagen:")?.trim();
     if (!url) return;
     if (/^javascript:/i.test(url)) return;
     insertImageAtSelection(url);
   };
 
-  const openPreview = () => {
-    const tema = title.trim() || 'Sin título';
-    const raw = (contentRef.current?.innerHTML ?? '').trim() || '<p><br></p>';
+  // ✅ Construye HTML EXACTO como Flutter (clean + attrs + p-empty)
+  const buildPreview = () => {
+    const tema = title.trim() || "Sin título";
+    const raw = (contentRef.current?.innerHTML ?? "").trim() || "<p><br></p>";
 
     const cleaned0 = addFlutterSpanAttrs(cleanHtml(raw));
     const cleaned = cleaned0.replace(/<p><br><\/p>/gi, '<p class="p-empty"><br></p>');
 
     setPreviewTitle(tema);
     setPreviewHtml(cleaned);
+  };
+
+  const openPreview = () => {
+    buildPreview();
     setPreviewOpen(true);
 
     const maxLeft = Math.max(0, window.innerWidth - PHONE_W - 16);
@@ -726,7 +899,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   };
 
   const onDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     const st = dragRef.current;
     st.dragging = true;
     st.pointerId = e.pointerId;
@@ -734,7 +907,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     st.startY = e.clientY;
     st.startLeft = previewPos.left;
     st.startTop = previewPos.top;
-    document.body.style.userSelect = 'none';
+    document.body.style.userSelect = "none";
     (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
   };
 
@@ -759,11 +932,19 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     if (st.pointerId !== e.pointerId) return;
     st.dragging = false;
     st.pointerId = null;
-    document.body.style.userSelect = '';
+    document.body.style.userSelect = "";
     try {
       (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
     } catch {}
   };
+
+  // ✅ Auto refresh con debounce mientras escribes (si preview abierto)
+  useEffect(() => {
+    if (!previewOpen) return;
+    const t = window.setTimeout(() => buildPreview(), 250);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, title, previewOpen]);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border">
@@ -814,12 +995,13 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       </style>
 
       <div className="flex items-center justify-between p-6 border-b">
-        <h2 className="text-xl font-semibold text-gray-800">{isEditing ? 'Editar Artículo' : 'Nuevo Artículo'}</h2>
+        <h2 className="text-xl font-semibold text-gray-800">{isEditing ? "Editar Artículo" : "Nuevo Artículo"}</h2>
         <div className="flex gap-2">
           <button
             onClick={openPreview}
             className="px-4 py-2 bg-black text-white rounded-lg hover:bg-black/80 transition-colors flex items-center gap-2"
             title="Previsualizar como en la app"
+            type="button"
           >
             <Smartphone className="w-4 h-4" />
             Previsualizar
@@ -829,14 +1011,16 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             onClick={handleSave}
             disabled={!title.trim() || !content.trim()}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            type="button"
           >
             {isEditing ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
-            {isEditing ? 'ACTUALIZAR' : 'CREAR'}
+            {isEditing ? "ACTUALIZAR" : "CREAR"}
           </button>
 
           <button
             onClick={onCancel}
             className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors flex items-center gap-2"
+            type="button"
           >
             <X className="w-4 h-4" />
             Cancelar
@@ -859,32 +1043,57 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         <label className="block text-sm font-medium text-gray-700 mb-2">Contenido</label>
 
         <div className="flex flex-wrap items-center gap-2 mb-4 p-2 bg-gray-50 rounded-lg">
-          <button onClick={() => formatText('bold')} className="p-2 hover:bg-gray-200 rounded" title="Negrita">
+          <button onClick={() => formatText("bold")} className="p-2 hover:bg-gray-200 rounded" title="Negrita" type="button">
             <Bold className="w-4 h-4" />
           </button>
-          <button onClick={() => formatText('italic')} className="p-2 hover:bg-gray-200 rounded" title="Cursiva">
+          <button onClick={() => formatText("italic")} className="p-2 hover:bg-gray-200 rounded" title="Cursiva" type="button">
             <Italic className="w-4 h-4" />
           </button>
-          <button onClick={() => formatText('underline')} className="p-2 hover:bg-gray-200 rounded" title="Subrayado">
+          <button
+            onClick={() => formatText("underline")}
+            className="p-2 hover:bg-gray-200 rounded"
+            title="Subrayado"
+            type="button"
+          >
             <Underline className="w-4 h-4" />
           </button>
 
-          <button onClick={() => formatText('insertUnorderedList')} className="p-2 hover:bg-gray-200 rounded" title="Lista con viñetas">
+          <button
+            onClick={() => formatText("insertUnorderedList")}
+            className="p-2 hover:bg-gray-200 rounded"
+            title="Lista con viñetas"
+            type="button"
+          >
             <List className="w-4 h-4" />
           </button>
-          <button onClick={() => formatText('insertOrderedList')} className="p-2 hover:bg-gray-200 rounded" title="Lista numerada">
+          <button
+            onClick={() => formatText("insertOrderedList")}
+            className="p-2 hover:bg-gray-200 rounded"
+            title="Lista numerada"
+            type="button"
+          >
             <ListOrdered className="w-4 h-4" />
           </button>
 
-          <button onClick={openTableModal} className="p-2 hover:bg-gray-200 rounded" title="Insertar tabla">
+          <button onClick={openTableModal} className="p-2 hover:bg-gray-200 rounded" title="Insertar tabla" type="button">
             <Table className="w-4 h-4" />
           </button>
 
           <div className="flex items-center gap-2">
-            <button onClick={() => fileInputRef.current?.click()} className="p-2 hover:bg-gray-200 rounded" title="Insertar imagen (archivo)">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 hover:bg-gray-200 rounded"
+              title="Insertar imagen (archivo)"
+              type="button"
+            >
               <ImagePlus className="w-4 h-4" />
             </button>
-            <button onClick={insertImageFromUrl} className="px-2 py-1 border rounded text-sm hover:bg-gray-200" title="Insertar imagen desde URL">
+            <button
+              onClick={insertImageFromUrl}
+              className="px-2 py-1 border rounded text-sm hover:bg-gray-200"
+              title="Insertar imagen desde URL"
+              type="button"
+            >
               URL
             </button>
             <input
@@ -895,38 +1104,41 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               onChange={async (e) => {
                 const f = e.target.files?.[0];
                 if (f) await handleImageFile(f);
-                e.currentTarget.value = '';
+                e.currentTarget.value = "";
               }}
             />
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={toggleHighlight} className="p-2 hover:bg-gray-200 rounded" title="Resaltar (toggle)">
+            <button onClick={toggleHighlight} className="p-2 hover:bg-gray-200 rounded" title="Resaltar (toggle)" type="button">
               <Highlighter className="w-4 h-4" />
             </button>
             <input type="color" value={highlightColor} onChange={(e) => setHighlightColor(e.target.value)} />
           </div>
 
+          {/* ✅ ENMARCAR */}
           <div className="flex items-center gap-2">
             <button
               onClick={() =>
                 formatText(
-                  'insertHTML',
+                  "insertHTML",
                   `<span data-border="1" style="border:1px solid ${borderColor};padding:2px 6px;border-radius:6px;display:inline-block;">${
-                    escapeHtml(window.getSelection()?.toString() || '') || '&nbsp;'
+                    escapeHtml(window.getSelection()?.toString() || "") || "&nbsp;"
                   }</span>`
                 )
               }
               className="p-2 hover:bg-gray-200 rounded"
               title="Enmarcar"
+              type="button"
             >
               <Square className="w-4 h-4" />
             </button>
             <input type="color" value={borderColor} onChange={(e) => setBorderColor(e.target.value)} />
           </div>
 
+          {/* ✅ COLOR TEXTO */}
           <div className="flex items-center gap-2">
-            <button onClick={applyTextColor} className="p-2 hover:bg-gray-200 rounded" title="Color de texto">
+            <button onClick={applyTextColor} className="p-2 hover:bg-gray-200 rounded" title="Color de texto" type="button">
               <Type className="w-4 h-4" />
             </button>
             <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} />
@@ -934,13 +1146,11 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
           {/* ✅ Tamaño estilo Word: input + dropdown */}
           <div className="flex items-center gap-2">
-            {/* Dropdown */}
             <div className="relative" ref={sizeMenuRef}>
               <button
                 type="button"
                 className="px-2 py-1 border rounded text-sm hover:bg-gray-200 flex items-center gap-1"
                 onMouseDown={() => {
-                  // guarda selección antes de abrir menú
                   rememberRangeIfInside();
                   if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
                 }}
@@ -959,7 +1169,6 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                       type="button"
                       className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100"
                       onMouseDown={(e) => {
-                        // evita que el click mate la selección del editor
                         e.preventDefault();
                         rememberRangeIfInside();
                         if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
@@ -978,22 +1187,20 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
               )}
             </div>
 
-            {/* Input libre: escribe y aplica INMEDIATO, sin Enter */}
             <input
               ref={fontSizeInputRef}
               type="text"
               inputMode="numeric"
               value={fontSizeInput}
               onMouseDown={() => {
-                // guarda la selección ANTES de perderla por el input
                 rememberRangeIfInside();
                 if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
               }}
               onChange={(e) => {
-                const v = e.target.value.replace(/[^\d]/g, '');
+                const v = e.target.value.replace(/[^\d]/g, "");
                 setFontSizeInput(v);
 
-                if (v !== '') {
+                if (v !== "") {
                   const n = Number(v);
                   if (Number.isFinite(n)) {
                     setFontSizePx(n);
@@ -1002,8 +1209,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
                 }
               }}
               onKeyDown={(e) => {
-                // Enter solo cierra dropdown si estaba abierto / y regresa foco al editor si quieres
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   e.preventDefault();
                   setSizeMenuOpen(false);
                   contentRef.current?.focus();
@@ -1022,7 +1228,9 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
         </div>
 
         <div className="relative">
-          {!content && <div className="absolute top-2 left-3 text-gray-400 text-sm pointer-events-none">Ingrese el contenido...</div>}
+          {!content && (
+            <div className="absolute top-2 left-3 text-gray-400 text-sm pointer-events-none">Ingrese el contenido...</div>
+          )}
           <div
             ref={contentRef}
             contentEditable
@@ -1030,7 +1238,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             onPaste={handlePaste}
             onDrop={handleDrop}
             className="content-editable relative min-h-64 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none prose prose-sm max-w-none"
-            style={{ minHeight: '200px', whiteSpace: 'pre-wrap' }}
+            style={{ minHeight: "200px", whiteSpace: "pre-wrap" }}
           />
         </div>
       </div>
@@ -1041,7 +1249,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           <div className="relative z-10 w-full max-w-sm bg-white rounded-xl shadow-lg border p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold">Insertar tabla</h3>
-              <button onClick={closeTableModal} className="p-1 rounded hover:bg-gray-100">
+              <button onClick={closeTableModal} className="p-1 rounded hover:bg-gray-100" type="button">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1076,10 +1284,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
             </div>
 
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={closeTableModal} className="px-4 py-2 rounded-lg border hover:bg-gray-50">
+              <button onClick={closeTableModal} className="px-4 py-2 rounded-lg border hover:bg-gray-50" type="button">
                 Cancelar
               </button>
-              <button onClick={confirmInsertTable} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+              <button
+                onClick={confirmInsertTable}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                type="button"
+              >
                 Insertar
               </button>
             </div>
@@ -1088,28 +1300,32 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       )}
 
       {previewOpen && (
-  <FlutterPhonePreview
-    title={previewTitle}
-    html={previewHtml}
-    updatedAt={new Date().toISOString()} // o tu fecha real
-    dark={false} // puedes conectarlo a un toggle si quieres
-    logoSrc="/infectologia-logo.png" // pon tu logo real
-    pos={previewPos}
-    phoneW={PHONE_W}
-    phoneH={PHONE_H}
-    onClose={closePreview}
-    onCenter={centerPreview}
-    onDragStart={onDragStart}
-    onDragMove={onDragMove}
-    onDragEnd={onDragEnd}
-  />
-)}
+        <FlutterPhonePreview
+          title={previewTitle}
+          html={previewHtml}
+          updatedAt={new Date().toISOString()}
+          dark={false}
+          logoSrc="/infectologia-logo.png"
+          pos={previewPos}
+          phoneW={PHONE_W}
+          phoneH={PHONE_H}
+          onClose={closePreview}
+          onCenter={centerPreview}
+          onRefresh={() => buildPreview()}
+          onDragStart={onDragStart}
+          onDragMove={onDragMove}
+          onDragEnd={onDragEnd}
+        />
+      )}
     </div>
   );
 };
 
 export default ArticleEditor;
 
+// ===============================
+// FlutterPhonePreview
+// ===============================
 
 type FlutterPhonePreviewProps = {
   title: string;
@@ -1124,6 +1340,7 @@ type FlutterPhonePreviewProps = {
 
   onClose: () => void;
   onCenter: () => void;
+  onRefresh: () => void;
 
   onDragStart: (e: React.PointerEvent<HTMLDivElement>) => void;
   onDragMove: (e: React.PointerEvent<HTMLDivElement>) => void;
@@ -1141,19 +1358,19 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
   phoneH,
   onClose,
   onCenter,
+  onRefresh,
   onDragStart,
   onDragMove,
   onDragEnd,
 }) => {
-  const bg = dark ? '#0F1115' : '#F4F6F8';
-  const card = dark ? '#121417' : '#FFFFFF';
-  const text = dark ? '#FFFFFF' : '#111827';
-  const muted = dark ? 'rgba(255,255,255,.55)' : 'rgba(17,24,39,.45)';
-  const line = dark ? 'rgba(255,255,255,.10)' : 'rgba(17,24,39,.08)';
-  const searchBg = dark ? 'rgba(255,255,255,.06)' : '#FFFFFF';
-  const navBg = '#0B4A8B';
-  const navActive = '#F4B400'; // amarillito tipo tu screenshot
-  const navMuted = 'rgba(255,255,255,.65)';
+  const bg = dark ? "#0F1115" : "#F4F6F8";
+  const text = dark ? "#FFFFFF" : "#111827";
+  const muted = dark ? "rgba(255,255,255,.55)" : "rgba(17,24,39,.45)";
+  const line = dark ? "rgba(255,255,255,.10)" : "rgba(17,24,39,.08)";
+  const searchBg = dark ? "rgba(255,255,255,.06)" : "#FFFFFF";
+  const navBg = "#0B4A8B";
+  const navActive = "#F4B400";
+  const navMuted = "rgba(255,255,255,.65)";
 
   const PHONE_RADIUS = 34;
   const notchW = 170;
@@ -1161,7 +1378,6 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
 
   return (
     <div className="fixed z-[70]" style={{ left: pos.left, top: pos.top, width: phoneW }}>
-      {/* Barra drag (igual que ya tenías) */}
       <div
         className="flex items-center justify-between gap-2 px-3 py-2 rounded-t-2xl bg-black text-white cursor-grab active:cursor-grabbing select-none"
         onPointerDown={onDragStart}
@@ -1176,8 +1392,32 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
 
         <div className="flex items-center gap-1">
           <button
+            type="button"
+            className="p-1.5 rounded hover:bg-white/10"
+            title="Refrescar preview"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRefresh();
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <path
+                d="M20 4v6h-6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+
+          <button
+            type="button"
             className="p-1.5 rounded hover:bg-white/10"
             title="Centrar"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               onCenter();
@@ -1187,8 +1427,10 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
           </button>
 
           <button
+            type="button"
             className="p-1.5 rounded hover:bg-white/10"
             title="Cerrar preview"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               onClose();
@@ -1199,26 +1441,17 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
         </div>
       </div>
 
-      {/* Marco */}
       <div className="rounded-b-2xl border border-black/20 bg-black p-3 shadow-2xl">
-        <div
-          className="relative overflow-hidden"
-          style={{
-            borderRadius: PHONE_RADIUS,
-            background: bg,
-            height: phoneH,
-          }}
-        >
-          {/* Notch */}
+        <div className="relative overflow-hidden" style={{ borderRadius: PHONE_RADIUS, background: bg, height: phoneH }}>
           <div
             style={{
-              position: 'absolute',
-              left: '50%',
+              position: "absolute",
+              left: "50%",
               top: 8,
-              transform: 'translateX(-50%)',
+              transform: "translateX(-50%)",
               width: notchW,
               height: notchH,
-              background: '#000',
+              background: "#000",
               borderBottomLeftRadius: 18,
               borderBottomRightRadius: 18,
               opacity: 0.92,
@@ -1226,31 +1459,20 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
             }}
           />
 
-          {/* Status bar spacing */}
           <div style={{ height: 44 }} />
 
-          {/* Top bar (menu + logo + dark icon) */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '10px 14px',
-              gap: 10,
-              background: bg,
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", gap: 10, background: bg }}>
             <div
               style={{
                 width: 34,
                 height: 34,
                 borderRadius: 10,
-                display: 'grid',
-                placeItems: 'center',
+                display: "grid",
+                placeItems: "center",
                 color: text,
-                background: dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)',
+                background: dark ? "rgba(255,255,255,.06)" : "rgba(0,0,0,.04)",
               }}
             >
-              {/* “hamburger” */}
               <div style={{ width: 16 }}>
                 <div style={{ height: 2, background: text, opacity: 0.8, marginBottom: 3, borderRadius: 999 }} />
                 <div style={{ height: 2, background: text, opacity: 0.8, marginBottom: 3, borderRadius: 999 }} />
@@ -1258,9 +1480,9 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
               </div>
             </div>
 
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+            <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
               {logoSrc ? (
-                <img src={logoSrc} alt="logo" style={{ height: 20, objectFit: 'contain', opacity: dark ? 0.95 : 0.9 }} />
+                <img src={logoSrc} alt="logo" style={{ height: 20, objectFit: "contain", opacity: dark ? 0.95 : 0.9 }} />
               ) : (
                 <div style={{ fontWeight: 800, letterSpacing: 0.3, color: text, opacity: 0.85, fontSize: 12 }}>
                   INFECTOLOGÍA
@@ -1273,72 +1495,51 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
                 width: 34,
                 height: 34,
                 borderRadius: 10,
-                display: 'grid',
-                placeItems: 'center',
+                display: "grid",
+                placeItems: "center",
                 color: text,
-                background: dark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)',
+                background: dark ? "rgba(255,255,255,.06)" : "rgba(0,0,0,.04)",
               }}
               title="Dark mode (solo visual)"
             >
-              {/* luna */}
               <div
                 style={{
                   width: 14,
                   height: 14,
                   borderRadius: 999,
                   border: `2px solid ${text}`,
-                  position: 'relative',
+                  position: "relative",
                   opacity: 0.8,
                 }}
               >
-                <div
-                  style={{
-                    position: 'absolute',
-                    right: -2,
-                    top: -2,
-                    width: 10,
-                    height: 10,
-                    borderRadius: 999,
-                    background: bg,
-                  }}
-                />
+                <div style={{ position: "absolute", right: -2, top: -2, width: 10, height: 10, borderRadius: 999, background: bg }} />
               </div>
             </div>
           </div>
 
-          {/* Search */}
-          <div style={{ padding: '0 14px 10px 14px' }}>
+          <div style={{ padding: "0 14px 10px 14px" }}>
             <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
+                display: "flex",
+                alignItems: "center",
                 gap: 10,
-                padding: '10px 12px',
+                padding: "10px 12px",
                 borderRadius: 16,
                 background: searchBg,
                 border: `1px solid ${line}`,
               }}
             >
               <div style={{ width: 18, height: 18, opacity: 0.5 }}>
-                {/* icono lupa simple */}
-                <div
-                  style={{
-                    width: 12,
-                    height: 12,
-                    border: `2px solid ${muted}`,
-                    borderRadius: 999,
-                    position: 'relative',
-                  }}
-                >
+                <div style={{ width: 12, height: 12, border: `2px solid ${muted}`, borderRadius: 999, position: "relative" }}>
                   <div
                     style={{
-                      position: 'absolute',
+                      position: "absolute",
                       width: 8,
                       height: 2,
                       background: muted,
                       bottom: -6,
                       right: -6,
-                      transform: 'rotate(45deg)',
+                      transform: "rotate(45deg)",
                       borderRadius: 999,
                     }}
                   />
@@ -1348,60 +1549,52 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
             </div>
           </div>
 
-          {/* Back + Title */}
-          <div style={{ padding: '6px 14px 0 14px', color: text }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 28, height: 28, display: 'grid', placeItems: 'center', opacity: 0.9 }}>
-                {/* flecha */}
+          <div style={{ padding: "6px 14px 0 14px", color: text }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 28, height: 28, display: "grid", placeItems: "center", opacity: 0.9 }}>
                 <div
                   style={{
                     width: 10,
                     height: 10,
                     borderLeft: `2px solid ${text}`,
                     borderBottom: `2px solid ${text}`,
-                    transform: 'rotate(45deg)',
+                    transform: "rotate(45deg)",
                     marginLeft: 4,
                   }}
                 />
               </div>
-              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{title || 'Sin título'}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{title || "Sin título"}</div>
             </div>
           </div>
 
-          {/* Content area */}
           <div
             style={{
-              position: 'absolute',
+              position: "absolute",
               left: 0,
               right: 0,
-              top: 44 + 54 + 54 + 44, // status + topbar + search + title row (aprox)
-              bottom: 76, // bottom nav height
-              overflow: 'auto',
-              padding: '14px 18px 18px 18px',
+              top: 44 + 54 + 54 + 44,
+              bottom: 76,
+              overflow: "auto",
+              padding: "14px 18px 18px 18px",
               color: text,
+              background: bg,
             }}
           >
-            {/* Tu HTML ya estilizado con .flutter-html */}
             <div className="flutter-html" dangerouslySetInnerHTML={{ __html: html }} />
-
-            {/* Updated */}
-            <div style={{ marginTop: 22, fontSize: 11, color: muted }}>
-              {updatedAt ? `Actualizado: ${updatedAt}` : ''}
-            </div>
+            <div style={{ marginTop: 22, fontSize: 11, color: muted }}>{updatedAt ? `Actualizado: ${updatedAt}` : ""}</div>
           </div>
 
-          {/* Bottom nav */}
           <div
             style={{
-              position: 'absolute',
+              position: "absolute",
               left: 0,
               right: 0,
               bottom: 0,
               height: 76,
               background: navBg,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-around',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-around",
               paddingBottom: 8,
             }}
           >
@@ -1409,24 +1602,23 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
             <NavItem label="Inicio" />
             <NavItem label="Calculadora" />
             <NavItem label="Vacunas" />
-            {/* home indicator */}
+
             <div
               style={{
-                position: 'absolute',
-                left: '50%',
+                position: "absolute",
+                left: "50%",
                 bottom: 6,
-                transform: 'translateX(-50%)',
+                transform: "translateX(-50%)",
                 width: 120,
                 height: 5,
                 borderRadius: 999,
-                background: 'rgba(255,255,255,.22)',
+                background: "rgba(255,255,255,.22)",
               }}
             />
           </div>
         </div>
       </div>
 
-      {/* estilos del nav item */}
       <style>{`
         .nav-item {
           width: 78px;
@@ -1438,16 +1630,12 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
           font-weight: 700;
         }
       `}</style>
-
-      {/* componente inline */}
-      {(() => null)()}
     </div>
   );
 
   function NavItem({ label, active }: { label: string; active?: boolean }) {
     return (
       <div className="nav-item" style={{ color: active ? navActive : navMuted }}>
-        {/* icono cuadradito simple */}
         <div
           style={{
             width: 22,
