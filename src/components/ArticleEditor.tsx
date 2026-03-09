@@ -1434,17 +1434,10 @@ const buildPreview = () => {
   setPreviewHtml(cleaned2);
 };
 
-  const openPreview = () => {
-    buildPreview();
-    setPreviewOpen(true);
-
-    const maxLeft = Math.max(0, window.innerWidth - PHONE_W - 16);
-    const maxTop = Math.max(0, window.innerHeight - PHONE_H - 16);
-    setPreviewPos((p) => ({
-      left: clamp(p.left, 8, maxLeft),
-      top: clamp(p.top, 8, maxTop),
-    }));
-  };
+const openPreview = () => {
+  buildPreview();
+  setPreviewOpen(true);
+};
 
   const closePreview = () => setPreviewOpen(false);
 
@@ -1470,21 +1463,24 @@ const buildPreview = () => {
     (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
   };
 
-  const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const st = dragRef.current;
-    if (!st.dragging || st.pointerId !== e.pointerId) return;
+const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const st = dragRef.current;
+  if (!st.dragging || st.pointerId !== e.pointerId) return;
 
-    const dx = e.clientX - st.startX;
-    const dy = e.clientY - st.startY;
+  const dx = e.clientX - st.startX;
+  const dy = e.clientY - st.startY;
 
-    const maxLeft = Math.max(0, window.innerWidth - PHONE_W - 8);
-    const maxTop = Math.max(0, window.innerHeight - PHONE_H - 8);
+  const nextLeft = st.startLeft + dx;
+  const nextTop = st.startTop + dy;
 
-    setPreviewPos({
-      left: clamp(st.startLeft + dx, 8, maxLeft),
-      top: clamp(st.startTop + dy, 8, maxTop),
-    });
-  };
+  // deja solo una franja visible para poder recuperarlo
+  const visibleHandle = 80;
+
+  setPreviewPos({
+    left: clamp(nextLeft, -PHONE_W + visibleHandle, window.innerWidth - visibleHandle),
+    top: clamp(nextTop, -40, window.innerHeight - 40),
+  });
+};
 
   const onDragEnd = (e: React.PointerEvent<HTMLDivElement>) => {
     const st = dragRef.current;
@@ -1515,6 +1511,14 @@ const buildPreview = () => {
             padding-left: 1.25rem;
             margin: 0.5rem 0;
           }
+              .content-editable x-border {
+      display: inline-block;
+      border: 1px solid;
+      padding: 2px 6px;
+      border-radius: 6px;
+      line-height: 1.2;
+      box-sizing: border-box;
+    }
           .content-editable ul { list-style: disc; }
           .content-editable ol { list-style: decimal; }
           .content-editable li { margin: 0.125rem 0; }
@@ -1753,9 +1757,9 @@ const buildPreview = () => {
     const selectedText = lastRangeRef.current?.toString() ?? "";
 
     formatText(
-      "insertHTML",
-      `<x-border style="border-color:${borderColor};">${escapeHtml(selectedText) || "&nbsp;"}</x-border>`
-    );
+  "insertHTML",
+  `<x-border style="border:1px solid ${borderColor}; padding:2px 6px; border-radius:6px; display:inline-block;">${escapeHtml(selectedText) || "&nbsp;"}</x-border>`
+);
   }}
   className="p-2 hover:bg-gray-200 rounded"
   title="Enmarcar"
