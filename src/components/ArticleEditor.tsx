@@ -191,7 +191,8 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
   onCancel,
   onUpdate,
   saving = false,
-}) => {  const [title, setTitle] = useState<string>(article?.tema ?? "");
+}) => {
+  const [title, setTitle] = useState<string>(article?.tema ?? "");
   const [content, setContent] = useState<string>(article?.contenidos?.[0] ?? "");
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -508,14 +509,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
     };
   }, [sizeMenuOpen]);
 
-const handleContentChange = () => {
-  normalizeTopLevelToParagraphs();
-  if (contentRef.current) {
-    cleanupAllFontSizeSpans(contentRef.current);
-    cleanupAllColorSpans(contentRef.current);
-    setContent(contentRef.current.innerHTML);
-  }
-};
+  const handleContentChange = () => {
+    normalizeTopLevelToParagraphs();
+    if (contentRef.current) {
+      cleanupAllFontSizeSpans(contentRef.current);
+      cleanupAllColorSpans(contentRef.current);
+      setContent(contentRef.current.innerHTML);
+    }
+  };
 
   function getSingleSelectedFontSizeSpan(range: Range, root: HTMLElement): HTMLSpanElement | null {
     // Caso 1: selección exacta de un nodo <span style="font-size:...">
@@ -640,67 +641,67 @@ const handleContentChange = () => {
   };
 
   function linkifyPlainUrls(html: string): string {
-  if (!html) return html;
+    if (!html) return html;
 
-  const protectedBlocks: string[] = [];
-  let protectedHtml = html;
+    const protectedBlocks: string[] = [];
+    let protectedHtml = html;
 
-  // Proteger bloques donde NO debemos tocar texto
-  const blockRegex =
-    /(<a\b[^>]*>[\s\S]*?<\/a>)|(<img\b[^>]*>)|(<script\b[^>]*>[\s\S]*?<\/script>)|(<style\b[^>]*>[\s\S]*?<\/style>)|(<code\b[^>]*>[\s\S]*?<\/code>)|(<pre\b[^>]*>[\s\S]*?<\/pre>)/gi;
+    // Proteger bloques donde NO debemos tocar texto
+    const blockRegex =
+      /(<a\b[^>]*>[\s\S]*?<\/a>)|(<img\b[^>]*>)|(<script\b[^>]*>[\s\S]*?<\/script>)|(<style\b[^>]*>[\s\S]*?<\/style>)|(<code\b[^>]*>[\s\S]*?<\/code>)|(<pre\b[^>]*>[\s\S]*?<\/pre>)/gi;
 
-  protectedHtml = protectedHtml.replace(blockRegex, (match) => {
-    const token = `___HTML_BLOCK_${protectedBlocks.length}___`;
-    protectedBlocks.push(match);
-    return token;
-  });
-
-  // Separar tags de texto para no tocar atributos HTML
-  const parts = protectedHtml.split(/(<[^>]+>)/g);
-
-  // Detecta:
-  // - http://...
-  // - https://...
-  // - www....
-  // - dominio.com/ruta
-  const urlRegex =
-    /((?:https?:\/\/|www\.)[^\s<]+|(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s<]*)?)/gi;
-
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-
-    // Si es tag, no tocar
-    if (part.startsWith("<") && part.endsWith(">")) continue;
-
-    parts[i] = part.replace(urlRegex, (rawUrl) => {
-      let url = rawUrl;
-      let trailing = "";
-
-      // quitar puntuación final común
-      while (/[.,;!?]+$/.test(url)) {
-        trailing = url[url.length - 1] + trailing;
-        url = url.slice(0, -1);
-      }
-
-      const lower = url.toLowerCase();
-      const href =
-        lower.startsWith("http://") || lower.startsWith("https://")
-          ? url
-          : `https://${url}`;
-
-      return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>${trailing}`;
+    protectedHtml = protectedHtml.replace(blockRegex, (match) => {
+      const token = `___HTML_BLOCK_${protectedBlocks.length}___`;
+      protectedBlocks.push(match);
+      return token;
     });
+
+    // Separar tags de texto para no tocar atributos HTML
+    const parts = protectedHtml.split(/(<[^>]+>)/g);
+
+    // Detecta:
+    // - http://...
+    // - https://...
+    // - www....
+    // - dominio.com/ruta
+    const urlRegex =
+      /((?:https?:\/\/|www\.)[^\s<]+|(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s<]*)?)/gi;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+
+      // Si es tag, no tocar
+      if (part.startsWith("<") && part.endsWith(">")) continue;
+
+      parts[i] = part.replace(urlRegex, (rawUrl) => {
+        let url = rawUrl;
+        let trailing = "";
+
+        // quitar puntuación final común
+        while (/[.,;!?]+$/.test(url)) {
+          trailing = url[url.length - 1] + trailing;
+          url = url.slice(0, -1);
+        }
+
+        const lower = url.toLowerCase();
+        const href =
+          lower.startsWith("http://") || lower.startsWith("https://")
+            ? url
+            : `https://${url}`;
+
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>${trailing}`;
+      });
+    }
+
+    protectedHtml = parts.join("");
+
+    // Restaurar bloques protegidos
+    for (let i = 0; i < protectedBlocks.length; i++) {
+      protectedHtml = protectedHtml.replace(`___HTML_BLOCK_${i}___`, protectedBlocks[i]);
+    }
+
+    return protectedHtml;
   }
-
-  protectedHtml = parts.join("");
-
-  // Restaurar bloques protegidos
-  for (let i = 0; i < protectedBlocks.length; i++) {
-    protectedHtml = protectedHtml.replace(`___HTML_BLOCK_${i}___`, protectedBlocks[i]);
-  }
-
-  return protectedHtml;
-}
 
 
   function cleanHtml(dirty: string): string {
@@ -721,12 +722,12 @@ const handleContentChange = () => {
       }
     });
 
-root.querySelectorAll("x-border").forEach((el) => {
-  const style = el.getAttribute("style") || "";
-  const borderColorMatch = style.match(/border-color\s*:\s*([^;]+)/i);
-  const borderColor = borderColorMatch?.[1]?.trim() || "#000";
-  el.setAttribute("style", `border-color:${borderColor};`);
-});
+    root.querySelectorAll("x-border").forEach((el) => {
+      const style = el.getAttribute("style") || "";
+      const borderColorMatch = style.match(/border-color\s*:\s*([^;]+)/i);
+      const borderColor = borderColorMatch?.[1]?.trim() || "#000";
+      el.setAttribute("style", `border-color:${borderColor};`);
+    });
 
     root.querySelectorAll<HTMLElement>("*").forEach((el) => {
       if (el.className && /(^|\s)Mso[\w-]*/i.test(el.className)) el.removeAttribute("class");
@@ -824,27 +825,27 @@ root.querySelectorAll("x-border").forEach((el) => {
     return top.innerHTML.trim();
   }
 
-function addFlutterSpanAttrs(html: string): string {
-  if (!html) return html;
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(`<div id="root">${html}</div>`, "text/html");
-  const root = doc.getElementById("root") as HTMLElement;
-  if (!root) return html;
+  function addFlutterSpanAttrs(html: string): string {
+    if (!html) return html;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<div id="root">${html}</div>`, "text/html");
+    const root = doc.getElementById("root") as HTMLElement;
+    if (!root) return html;
 
-  root.querySelectorAll("span[style]").forEach((span) => {
-    const style = (span.getAttribute("style") || "").toLowerCase();
-    if (style.includes("background-color") && !span.hasAttribute("data-highlight")) {
-      span.setAttribute("data-highlight", "1");
-    }
-  });
+    root.querySelectorAll("span[style]").forEach((span) => {
+      const style = (span.getAttribute("style") || "").toLowerCase();
+      if (style.includes("background-color") && !span.hasAttribute("data-highlight")) {
+        span.setAttribute("data-highlight", "1");
+      }
+    });
 
-  return root.innerHTML;
-}
+    return root.innerHTML;
+  }
 
-const applyTextColor = () => {
-  rememberRangeIfInside();
-  applyTextColorToSelection(textColor, lastRangeRef.current);
-};
+  const applyTextColor = () => {
+    rememberRangeIfInside();
+    applyTextColorToSelection(textColor, lastRangeRef.current);
+  };
 
   // ✅ NEW: Alineación por bloque (p/li/td/th/etc) + JUSTIFY
   type AlignMode = "left" | "center" | "right" | "justify";
@@ -998,49 +999,58 @@ const applyTextColor = () => {
     return newRange.cloneRange();
   };
 
-const applyTextColorToSelection = (color: string, rangeOverride?: Range | null): Range | null => {
-  const el = contentRef.current;
-  if (!el) return null;
+  const applyTextColorToSelection = (color: string, rangeOverride?: Range | null): Range | null => {
+    const el = contentRef.current;
+    if (!el) return null;
 
-  if (!restoreRange(rangeOverride ?? null)) {
-    if (!restoreRange()) placeCaretAtEnd(el);
-  }
+    if (!restoreRange(rangeOverride ?? null)) {
+      if (!restoreRange()) placeCaretAtEnd(el);
+    }
 
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return null;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
 
-  const range = sel.getRangeAt(0);
+    const range = sel.getRangeAt(0);
 
-  // MULTI-BLOCK: aplica color por bloque
-  const blocks = getSelectedBlocks(range, el);
-  if (blocks.length > 1) {
-    blocks.forEach((b) => {
-      b.style.color = color;
+    // MULTI-BLOCK: aplica color por bloque
+    const blocks = getSelectedBlocks(range, el);
+    if (blocks.length > 1) {
+      blocks.forEach((b) => {
+        b.style.color = color;
 
-      b.querySelectorAll("span[style*='color']").forEach((s) => {
-        (s as HTMLElement).style.color = "";
-        const st = (s as HTMLElement).getAttribute("style") || "";
-        const cleaned = st
-          .split(";")
-          .map((x) => x.trim())
-          .filter((x) => x && !/^color\s*:/i.test(x))
-          .join("; ");
-        if (cleaned) (s as HTMLElement).setAttribute("style", cleaned);
-        else (s as HTMLElement).removeAttribute("style");
+        b.querySelectorAll("span[style*='color']").forEach((s) => {
+          (s as HTMLElement).style.color = "";
+          const st = (s as HTMLElement).getAttribute("style") || "";
+          const cleaned = st
+            .split(";")
+            .map((x) => x.trim())
+            .filter((x) => x && !/^color\s*:/i.test(x))
+            .join("; ");
+          if (cleaned) (s as HTMLElement).setAttribute("style", cleaned);
+          else (s as HTMLElement).removeAttribute("style");
+        });
       });
-    });
 
-    cleanupAllColorSpans(el);
-    handleContentChange();
-    return range.cloneRange();
-  }
+      cleanupAllColorSpans(el);
+      handleContentChange();
+      return range.cloneRange();
+    }
 
-  // COLLAPSED
-  if (range.collapsed) {
-    const currentSpan = closestColorSpanFromSelection(el);
-    if (currentSpan) {
-      currentSpan.style.color = color;
-      unwrapNestedColorSpansWithin(currentSpan);
+    // COLLAPSED
+    if (range.collapsed) {
+      const currentSpan = closestColorSpanFromSelection(el);
+      if (currentSpan) {
+        currentSpan.style.color = color;
+        unwrapNestedColorSpansWithin(currentSpan);
+        cleanupAllColorSpans(el);
+        handleContentChange();
+
+        const sel2 = window.getSelection();
+        return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
+      }
+
+      document.execCommand("insertHTML", false, `<span style="color:${color};">\u200B</span>`);
+      normalizeTopLevelToParagraphs();
       cleanupAllColorSpans(el);
       handleContentChange();
 
@@ -1048,60 +1058,51 @@ const applyTextColorToSelection = (color: string, rangeOverride?: Range | null):
       return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
     }
 
-    document.execCommand("insertHTML", false, `<span style="color:${color};">\u200B</span>`);
+    // NON-COLLAPSED: si ya es un mismo span, solo cambiarlo
+    const single = getSingleSelectedColorSpan(range, el);
+    if (single) {
+      single.style.color = color;
+      unwrapNestedColorSpansWithin(single);
+      cleanupAllColorSpans(el);
+      handleContentChange();
+
+      sel.removeAllRanges();
+      const r2 = document.createRange();
+      r2.selectNodeContents(single);
+      sel.addRange(r2);
+      return r2.cloneRange();
+    }
+
+    // Caso general: wrap limpio
+    const extracted = range.extractContents();
+    const cleanedFrag = stripColorSpansFromFragment(extracted);
+
+    const wrapper = document.createElement("span");
+    wrapper.style.color = color;
+    wrapper.appendChild(cleanedFrag);
+
+    range.insertNode(wrapper);
+
+    const parentColor = wrapper.parentElement?.closest("span[style*='color']") as HTMLSpanElement | null;
+    if (parentColor && parentColor !== wrapper) {
+      parentColor.style.color = color;
+      unwrapElement(wrapper);
+      unwrapNestedColorSpansWithin(parentColor);
+    } else {
+      unwrapNestedColorSpansWithin(wrapper);
+    }
+
+    sel.removeAllRanges();
+    const newRange = document.createRange();
+    newRange.selectNodeContents(parentColor ?? wrapper);
+    sel.addRange(newRange);
+
     normalizeTopLevelToParagraphs();
     cleanupAllColorSpans(el);
     handleContentChange();
 
-    const sel2 = window.getSelection();
-    return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
-  }
-
-  // NON-COLLAPSED: si ya es un mismo span, solo cambiarlo
-  const single = getSingleSelectedColorSpan(range, el);
-  if (single) {
-    single.style.color = color;
-    unwrapNestedColorSpansWithin(single);
-    cleanupAllColorSpans(el);
-    handleContentChange();
-
-    sel.removeAllRanges();
-    const r2 = document.createRange();
-    r2.selectNodeContents(single);
-    sel.addRange(r2);
-    return r2.cloneRange();
-  }
-
-  // Caso general: wrap limpio
-  const extracted = range.extractContents();
-  const cleanedFrag = stripColorSpansFromFragment(extracted);
-
-  const wrapper = document.createElement("span");
-  wrapper.style.color = color;
-  wrapper.appendChild(cleanedFrag);
-
-  range.insertNode(wrapper);
-
-  const parentColor = wrapper.parentElement?.closest("span[style*='color']") as HTMLSpanElement | null;
-  if (parentColor && parentColor !== wrapper) {
-    parentColor.style.color = color;
-    unwrapElement(wrapper);
-    unwrapNestedColorSpansWithin(parentColor);
-  } else {
-    unwrapNestedColorSpansWithin(wrapper);
-  }
-
-  sel.removeAllRanges();
-  const newRange = document.createRange();
-  newRange.selectNodeContents(parentColor ?? wrapper);
-  sel.addRange(newRange);
-
-  normalizeTopLevelToParagraphs();
-  cleanupAllColorSpans(el);
-  handleContentChange();
-
-  return newRange.cloneRange();
-};
+    return newRange.cloneRange();
+  };
 
 
   // ✅ aplica tamaño desde toolbar SIN perder el cursor del input (puedes seguir tecleando)
@@ -1297,115 +1298,115 @@ const applyTextColorToSelection = (color: string, rangeOverride?: Range | null):
       r.onerror = reject;
       r.readAsDataURL(file);
     });
-function isColorSpan(el: Element): el is HTMLSpanElement {
-  if (!(el instanceof HTMLSpanElement)) return false;
-  const c = (el.style?.color || "").trim();
-  return Boolean(c);
-}
-
-function closestColorSpanFromSelection(root: HTMLElement): HTMLSpanElement | null {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return null;
-
-  const node = sel.getRangeAt(0).startContainer;
-  const el = node.nodeType === 1 ? (node as Element) : node.parentElement;
-  if (!el) return null;
-
-  const hit = el.closest("span[style*='color']") as HTMLSpanElement | null;
-  if (!hit) return null;
-  return root.contains(hit) ? hit : null;
-}
-
-function unwrapNestedColorSpansWithin(container: HTMLElement) {
-  const nested = Array.from(
-    container.querySelectorAll("span[style*='color']")
-  ) as HTMLSpanElement[];
-
-  for (let i = nested.length - 1; i >= 0; i--) {
-    const s = nested[i];
-    const parent = s.parentElement;
-    if (parent && parent !== container && parent.closest("span[style*='color']")) {
-      unwrapElement(s);
-    }
-  }
-}
-
-function mergeAdjacentColorSpans(root: HTMLElement) {
-  const spans = Array.from(root.querySelectorAll("span[style*='color']")) as HTMLSpanElement[];
-
-  for (const s of spans) {
-    if (!s.parentNode) continue;
-
-    if (s.querySelector("span[style*='color']")) {
-      unwrapNestedColorSpansWithin(s);
-    }
-
-    let next = s.nextSibling;
-    while (next && next.nodeType === Node.TEXT_NODE && (next.textContent ?? "") === "") {
-      next = next.nextSibling;
-    }
-
-    while (
-      next instanceof HTMLSpanElement &&
-      isColorSpan(next) &&
-      next.style.color === s.style.color
-    ) {
-      while (next.firstChild) s.appendChild(next.firstChild);
-      const toRemove = next;
-      next = next.nextSibling;
-      toRemove.remove();
-    }
-
-    if (!s.textContent?.length && !s.children.length) s.remove();
-  }
-}
-
-function cleanupAllColorSpans(root: HTMLElement) {
-  const spans = Array.from(root.querySelectorAll("span[style*='color']")) as HTMLSpanElement[];
-  for (const s of spans) {
-    if (s.querySelector("span[style*='color']")) unwrapNestedColorSpansWithin(s);
-  }
-  mergeAdjacentColorSpans(root);
-}
-
-function stripColorSpansFromFragment(frag: DocumentFragment) {
-  const tmp = document.createElement("div");
-  tmp.appendChild(frag.cloneNode(true));
-  const spans = Array.from(tmp.querySelectorAll("span[style*='color']")) as HTMLSpanElement[];
-  for (const s of spans) unwrapElement(s);
-
-  const cleaned = document.createDocumentFragment();
-  while (tmp.firstChild) cleaned.appendChild(tmp.firstChild);
-  return cleaned;
-}
-
-function getSingleSelectedColorSpan(range: Range, root: HTMLElement): HTMLSpanElement | null {
-  const a = range.startContainer;
-  const b = range.endContainer;
-
-  if (a === b && range.startContainer.nodeType === Node.ELEMENT_NODE) {
-    const el = range.startContainer as Element;
-    const child = el.childNodes[range.startOffset];
-    if (child instanceof HTMLSpanElement && isColorSpan(child) && root.contains(child)) return child;
+  function isColorSpan(el: Element): el is HTMLSpanElement {
+    if (!(el instanceof HTMLSpanElement)) return false;
+    const c = (el.style?.color || "").trim();
+    return Boolean(c);
   }
 
-  const startEl = (range.startContainer.nodeType === 1
-    ? (range.startContainer as Element)
-    : range.startContainer.parentElement) as Element | null;
+  function closestColorSpanFromSelection(root: HTMLElement): HTMLSpanElement | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
 
-  const endEl = (range.endContainer.nodeType === 1
-    ? (range.endContainer as Element)
-    : range.endContainer.parentElement) as Element | null;
+    const node = sel.getRangeAt(0).startContainer;
+    const el = node.nodeType === 1 ? (node as Element) : node.parentElement;
+    if (!el) return null;
 
-  if (!startEl || !endEl) return null;
+    const hit = el.closest("span[style*='color']") as HTMLSpanElement | null;
+    if (!hit) return null;
+    return root.contains(hit) ? hit : null;
+  }
 
-  const s1 = startEl.closest("span[style*='color']") as HTMLSpanElement | null;
-  const s2 = endEl.closest("span[style*='color']") as HTMLSpanElement | null;
+  function unwrapNestedColorSpansWithin(container: HTMLElement) {
+    const nested = Array.from(
+      container.querySelectorAll("span[style*='color']")
+    ) as HTMLSpanElement[];
 
-  if (s1 && s1 === s2 && root.contains(s1)) return s1;
+    for (let i = nested.length - 1; i >= 0; i--) {
+      const s = nested[i];
+      const parent = s.parentElement;
+      if (parent && parent !== container && parent.closest("span[style*='color']")) {
+        unwrapElement(s);
+      }
+    }
+  }
 
-  return null;
-}
+  function mergeAdjacentColorSpans(root: HTMLElement) {
+    const spans = Array.from(root.querySelectorAll("span[style*='color']")) as HTMLSpanElement[];
+
+    for (const s of spans) {
+      if (!s.parentNode) continue;
+
+      if (s.querySelector("span[style*='color']")) {
+        unwrapNestedColorSpansWithin(s);
+      }
+
+      let next = s.nextSibling;
+      while (next && next.nodeType === Node.TEXT_NODE && (next.textContent ?? "") === "") {
+        next = next.nextSibling;
+      }
+
+      while (
+        next instanceof HTMLSpanElement &&
+        isColorSpan(next) &&
+        next.style.color === s.style.color
+      ) {
+        while (next.firstChild) s.appendChild(next.firstChild);
+        const toRemove = next;
+        next = next.nextSibling;
+        toRemove.remove();
+      }
+
+      if (!s.textContent?.length && !s.children.length) s.remove();
+    }
+  }
+
+  function cleanupAllColorSpans(root: HTMLElement) {
+    const spans = Array.from(root.querySelectorAll("span[style*='color']")) as HTMLSpanElement[];
+    for (const s of spans) {
+      if (s.querySelector("span[style*='color']")) unwrapNestedColorSpansWithin(s);
+    }
+    mergeAdjacentColorSpans(root);
+  }
+
+  function stripColorSpansFromFragment(frag: DocumentFragment) {
+    const tmp = document.createElement("div");
+    tmp.appendChild(frag.cloneNode(true));
+    const spans = Array.from(tmp.querySelectorAll("span[style*='color']")) as HTMLSpanElement[];
+    for (const s of spans) unwrapElement(s);
+
+    const cleaned = document.createDocumentFragment();
+    while (tmp.firstChild) cleaned.appendChild(tmp.firstChild);
+    return cleaned;
+  }
+
+  function getSingleSelectedColorSpan(range: Range, root: HTMLElement): HTMLSpanElement | null {
+    const a = range.startContainer;
+    const b = range.endContainer;
+
+    if (a === b && range.startContainer.nodeType === Node.ELEMENT_NODE) {
+      const el = range.startContainer as Element;
+      const child = el.childNodes[range.startOffset];
+      if (child instanceof HTMLSpanElement && isColorSpan(child) && root.contains(child)) return child;
+    }
+
+    const startEl = (range.startContainer.nodeType === 1
+      ? (range.startContainer as Element)
+      : range.startContainer.parentElement) as Element | null;
+
+    const endEl = (range.endContainer.nodeType === 1
+      ? (range.endContainer as Element)
+      : range.endContainer.parentElement) as Element | null;
+
+    if (!startEl || !endEl) return null;
+
+    const s1 = startEl.closest("span[style*='color']") as HTMLSpanElement | null;
+    const s2 = endEl.closest("span[style*='color']") as HTMLSpanElement | null;
+
+    if (s1 && s1 === s2 && root.contains(s1)) return s1;
+
+    return null;
+  }
 
 
   const handleImageFile = async (file: File) => {
@@ -1422,22 +1423,22 @@ function getSingleSelectedColorSpan(range: Range, root: HTMLElement): HTMLSpanEl
   };
 
   // ✅ Construye HTML EXACTO como Flutter (clean + attrs + p-empty)
-const buildPreview = () => {
-  const tema = title.trim() || "Sin título";
-  const raw = (contentRef.current?.innerHTML ?? "").trim() || "<p><br></p>";
+  const buildPreview = () => {
+    const tema = title.trim() || "Sin título";
+    const raw = (contentRef.current?.innerHTML ?? "").trim() || "<p><br></p>";
 
-  const cleaned0 = addFlutterSpanAttrs(cleanHtml(raw));
-  const cleaned1 = cleaned0.replace(/<p><br><\/p>/gi, '<p class="p-empty"><br></p>');
-  const cleaned2 = linkifyPlainUrls(cleaned1);
+    const cleaned0 = addFlutterSpanAttrs(cleanHtml(raw));
+    const cleaned1 = cleaned0.replace(/<p><br><\/p>/gi, '<p class="p-empty"><br></p>');
+    const cleaned2 = linkifyPlainUrls(cleaned1);
 
-  setPreviewTitle(tema);
-  setPreviewHtml(cleaned2);
-};
+    setPreviewTitle(tema);
+    setPreviewHtml(cleaned2);
+  };
 
-const openPreview = () => {
-  buildPreview();
-  setPreviewOpen(true);
-};
+  const openPreview = () => {
+    buildPreview();
+    setPreviewOpen(true);
+  };
 
   const closePreview = () => setPreviewOpen(false);
 
@@ -1463,24 +1464,24 @@ const openPreview = () => {
     (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
   };
 
-const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
-  const st = dragRef.current;
-  if (!st.dragging || st.pointerId !== e.pointerId) return;
+  const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const st = dragRef.current;
+    if (!st.dragging || st.pointerId !== e.pointerId) return;
 
-  const dx = e.clientX - st.startX;
-  const dy = e.clientY - st.startY;
+    const dx = e.clientX - st.startX;
+    const dy = e.clientY - st.startY;
 
-  const nextLeft = st.startLeft + dx;
-  const nextTop = st.startTop + dy;
+    const nextLeft = st.startLeft + dx;
+    const nextTop = st.startTop + dy;
 
-  // deja solo una franja visible para poder recuperarlo
-  const visibleHandle = 80;
+    // deja solo una franja visible para poder recuperarlo
+    const visibleHandle = 80;
 
-  setPreviewPos({
-    left: clamp(nextLeft, -PHONE_W + visibleHandle, window.innerWidth - visibleHandle),
-    top: clamp(nextTop, -40, window.innerHeight - 40),
-  });
-};
+    setPreviewPos({
+      left: clamp(nextLeft, -PHONE_W + visibleHandle, window.innerWidth - visibleHandle),
+      top: clamp(nextTop, -40, window.innerHeight - 40),
+    });
+  };
 
   const onDragEnd = (e: React.PointerEvent<HTMLDivElement>) => {
     const st = dragRef.current;
@@ -1592,30 +1593,30 @@ const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
             Previsualizar
           </button>
 
-         <button
-  onClick={handleSave}
-  disabled={saving || !title.trim() || !content.trim()}
-  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-  type="button"
->
-  {saving ? (
-    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-  ) : isEditing ? (
-    <Save className="w-4 h-4" />
-  ) : (
-    <PlusCircle className="w-4 h-4" />
-  )}
-  {saving ? "GUARDANDO..." : isEditing ? "ACTUALIZAR" : "CREAR"}
-</button>
-<button
-  onClick={onCancel}
-  disabled={saving}
-  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-  type="button"
->
-  <X className="w-4 h-4" />
-  Cancelar
-</button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !title.trim() || !content.trim()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            type="button"
+          >
+            {saving ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : isEditing ? (
+              <Save className="w-4 h-4" />
+            ) : (
+              <PlusCircle className="w-4 h-4" />
+            )}
+            {saving ? "GUARDANDO..." : isEditing ? "ACTUALIZAR" : "CREAR"}
+          </button>
+          <button
+            onClick={onCancel}
+            disabled={saving}
+            className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            type="button"
+          >
+            <X className="w-4 h-4" />
+            Cancelar
+          </button>
         </div>
       </div>
 
@@ -1748,93 +1749,93 @@ const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
 
           {/* ✅ ENMARCAR */}
           <div className="flex items-center gap-2">
-<button
-  onMouseDown={(e) => {
-    e.preventDefault();
-    rememberRangeIfInside();
-  }}
-  onClick={() => {
-    const selectedText = lastRangeRef.current?.toString() ?? "";
+            <button
+              onMouseDown={(e) => {
+                e.preventDefault();
+                rememberRangeIfInside();
+              }}
+              onClick={() => {
+                const selectedText = lastRangeRef.current?.toString() ?? "";
 
-    formatText(
-  "insertHTML",
-  `<x-border style="border:1px solid ${borderColor}; padding:2px 6px; border-radius:6px; display:inline-block;">${escapeHtml(selectedText) || "&nbsp;"}</x-border>`
-);
-  }}
-  className="p-2 hover:bg-gray-200 rounded"
-  title="Enmarcar"
-  type="button"
->
-  <Square className="w-4 h-4" />
-</button>
+                formatText(
+                  "insertHTML",
+                  `<x-border style="border:1px solid ${borderColor}; padding:2px 6px; border-radius:6px; display:inline-block;">${escapeHtml(selectedText) || "&nbsp;"}</x-border>`
+                );
+              }}
+              className="p-2 hover:bg-gray-200 rounded"
+              title="Enmarcar"
+              type="button"
+            >
+              <Square className="w-4 h-4" />
+            </button>
             <input type="color" value={borderColor} onChange={(e) => setBorderColor(e.target.value)} />
           </div>
 
-         <div className="flex items-center gap-2">
-  <button
-    onMouseDown={() => rememberRangeIfInside()}
-    onClick={applyTextColor}
-    className="p-2 hover:bg-gray-200 rounded"
-    title="Aplicar color de texto"
-    type="button"
-  >
-    <Type className="w-4 h-4" />
-  </button>
+          <div className="flex items-center gap-2">
+            <button
+              onMouseDown={() => rememberRangeIfInside()}
+              onClick={applyTextColor}
+              className="p-2 hover:bg-gray-200 rounded"
+              title="Aplicar color de texto"
+              type="button"
+            >
+              <Type className="w-4 h-4" />
+            </button>
 
-  <input
-    type="color"
-    value={textColor}
-    onMouseDown={() => rememberRangeIfInside()}
-    onChange={(e) => {
-      const c = e.target.value;
-      setTextColor(c);
-      applyTextColorToSelection(c, lastRangeRef.current);
-    }}
-  />
-</div>
+            <input
+              type="color"
+              value={textColor}
+              onMouseDown={() => rememberRangeIfInside()}
+              onChange={(e) => {
+                const c = e.target.value;
+                setTextColor(c);
+                applyTextColorToSelection(c, lastRangeRef.current);
+              }}
+            />
+          </div>
 
           {/* ✅ Tamaño estilo Word: input + dropdown */}
           <div className="flex items-center gap-2">
-  <div className="relative" ref={sizeMenuRef}>
-    <button
-      type="button"
-      className="px-2 py-1 border rounded text-sm hover:bg-gray-200 flex items-center gap-1"
-      onMouseDown={() => {
-        rememberRangeIfInside();
-        if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
-      }}
-      onClick={() => setSizeMenuOpen((s) => !s)}
-      title="Tamaños"
-    >
-      {fontSizePx}
-      <ChevronDown className="w-4 h-4" />
-    </button>
+            <div className="relative" ref={sizeMenuRef}>
+              <button
+                type="button"
+                className="px-2 py-1 border rounded text-sm hover:bg-gray-200 flex items-center gap-1"
+                onMouseDown={() => {
+                  rememberRangeIfInside();
+                  if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
+                }}
+                onClick={() => setSizeMenuOpen((s) => !s)}
+                title="Tamaños"
+              >
+                {fontSizePx}
+                <ChevronDown className="w-4 h-4" />
+              </button>
 
-    {sizeMenuOpen && (
-      <div className="absolute z-50 mt-1 w-[110px] max-h-64 overflow-auto bg-white border rounded shadow">
-        {SIZES.map((s) => (
-          <button
-            key={s}
-            type="button"
-            className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              rememberRangeIfInside();
-              if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
-            }}
-            onClick={() => {
-              setFontSizePx(s);
-              applySizeFromToolbar(s);
-              setSizeMenuOpen(false);
-            }}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-    )}
-  </div>
-</div>
+              {sizeMenuOpen && (
+                <div className="absolute z-50 mt-1 w-[110px] max-h-64 overflow-auto bg-white border rounded shadow">
+                  {SIZES.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        rememberRangeIfInside();
+                        if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
+                      }}
+                      onClick={() => {
+                        setFontSizePx(s);
+                        applySizeFromToolbar(s);
+                        setSizeMenuOpen(false);
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
 
 
@@ -2009,7 +2010,7 @@ const onDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
           html={previewHtml}
           updatedAt={new Date().toISOString()}
           dark={false}
-          logoSrc="/infectologia-logo.png"
+          logoSrc="/infecto_logo.jpeg"
           pos={previewPos}
           phoneW={PHONE_W}
           phoneH={PHONE_H}
@@ -2097,256 +2098,245 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
-  {/* ✅ Minimizar / Maximizar */}
-  <button
-    type="button"
-    className="p-1.5 rounded hover:bg-white/10"
-    title={minimized ? "Maximizar" : "Minimizar"}
-    onPointerDown={(e) => e.stopPropagation()}
-    onClick={(e) => {
-      e.stopPropagation();
-      setMinimized((v) => !v);
-    }}
-  >
-    {minimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
-  </button>
+          {/* ✅ Minimizar / Maximizar */}
+          <button
+            type="button"
+            className="p-1.5 rounded hover:bg-white/10"
+            title={minimized ? "Maximizar" : "Minimizar"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMinimized((v) => !v);
+            }}
+          >
+            {minimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+          </button>
 
-  {/* ✅ Refrescar */}
-  <button
-    type="button"
-    className="p-1.5 rounded hover:bg-white/10"
-    title="Refrescar preview"
-    onPointerDown={(e) => e.stopPropagation()}
-    onClick={(e) => {
-      e.stopPropagation();
-      onRefresh();
-    }}
-  >
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  </button>
+          {/* ✅ Refrescar */}
+          <button
+            type="button"
+            className="p-1.5 rounded hover:bg-white/10"
+            title="Refrescar preview"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRefresh();
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <path d="M20 4v6h-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
 
-  {/* Centrar */}
-  <button
-    type="button"
-    className="p-1.5 rounded hover:bg-white/10"
-    title="Centrar"
-    onPointerDown={(e) => e.stopPropagation()}
-    onClick={(e) => {
-      e.stopPropagation();
-      onCenter();
-    }}
-  >
-    <Crosshair className="w-4 h-4" />
-  </button>
+          {/* Centrar */}
+          <button
+            type="button"
+            className="p-1.5 rounded hover:bg-white/10"
+            title="Centrar"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCenter();
+            }}
+          >
+            <Crosshair className="w-4 h-4" />
+          </button>
 
-  {/* Cerrar */}
-  <button
-    type="button"
-    className="p-1.5 rounded hover:bg-white/10"
-    title="Cerrar preview"
-    onPointerDown={(e) => e.stopPropagation()}
-    onClick={(e) => {
-      e.stopPropagation();
-      onClose();
-    }}
-  >
-    <X className="w-4 h-4" />
-  </button>
-</div>
+          {/* Cerrar */}
+          <button
+            type="button"
+            className="p-1.5 rounded hover:bg-white/10"
+            title="Cerrar preview"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
       </div>
-{!minimized && (
+      {!minimized && (
 
-      <div className="rounded-b-2xl border border-black/20 bg-black p-3 shadow-2xl">
-        <div className="relative overflow-hidden" style={{ borderRadius: PHONE_RADIUS, background: bg, height: phoneH }}>
-          <div
-            style={{
-              position: "absolute",
-              left: "50%",
-              top: 8,
-              transform: "translateX(-50%)",
-              width: notchW,
-              height: notchH,
-              background: "#000",
-              borderBottomLeftRadius: 18,
-              borderBottomRightRadius: 18,
-              opacity: 0.92,
-              zIndex: 20,
-            }}
-          />
-
-          <div style={{ height: 44 }} />
-
-          <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", gap: 10, background: bg }}>
-            <div
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 10,
-                display: "grid",
-                placeItems: "center",
-                color: text,
-                background: dark ? "rgba(255,255,255,.06)" : "rgba(0,0,0,.04)",
-              }}
-            >
-              <div style={{ width: 16 }}>
-                <div style={{ height: 2, background: text, opacity: 0.8, marginBottom: 3, borderRadius: 999 }} />
-                <div style={{ height: 2, background: text, opacity: 0.8, marginBottom: 3, borderRadius: 999 }} />
-                <div style={{ height: 2, background: text, opacity: 0.8, borderRadius: 999 }} />
-              </div>
-            </div>
-
-            <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-              {logoSrc ? (
-                <img src={logoSrc} alt="logo" style={{ height: 20, objectFit: "contain", opacity: dark ? 0.95 : 0.9 }} />
-              ) : (
-                <div style={{ fontWeight: 800, letterSpacing: 0.3, color: text, opacity: 0.85, fontSize: 12 }}>
-                  INFECTOLOGÍA
-                </div>
-              )}
-            </div>
-
-            <div
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 10,
-                display: "grid",
-                placeItems: "center",
-                color: text,
-                background: dark ? "rgba(255,255,255,.06)" : "rgba(0,0,0,.04)",
-              }}
-              title="Dark mode (solo visual)"
-            >
-              <div
-                style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: 999,
-                  border: `2px solid ${text}`,
-                  position: "relative",
-                  opacity: 0.8,
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    right: -2,
-                    top: -2,
-                    width: 10,
-                    height: 10,
-                    borderRadius: 999,
-                    background: bg,
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div style={{ padding: "0 14px 10px 14px" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "10px 12px",
-                borderRadius: 16,
-                background: searchBg,
-                border: `1px solid ${line}`,
-              }}
-            >
-              <div style={{ width: 18, height: 18, opacity: 0.5 }}>
-                <div style={{ width: 12, height: 12, border: `2px solid ${muted}`, borderRadius: 999, position: "relative" }}>
-                  <div
-                    style={{
-                      position: "absolute",
-                      width: 8,
-                      height: 2,
-                      background: muted,
-                      bottom: -6,
-                      right: -6,
-                      transform: "rotate(45deg)",
-                      borderRadius: 999,
-                    }}
-                  />
-                </div>
-              </div>
-              <div style={{ color: muted, fontSize: 13 }}>Buscar</div>
-            </div>
-          </div>
-
-          <div style={{ padding: "6px 14px 0 14px", color: text }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 28, height: 28, display: "grid", placeItems: "center", opacity: 0.9 }}>
-                <div
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderLeft: `2px solid ${text}`,
-                    borderBottom: `2px solid ${text}`,
-                    transform: "rotate(45deg)",
-                    marginLeft: 4,
-                  }}
-                />
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{title || "Sin título"}</div>
-            </div>
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: 44 + 54 + 54 + 44,
-              bottom: 76,
-              overflow: "auto",
-              padding: "14px 18px 18px 18px",
-              color: text,
-              background: bg,
-            }}
-          >
-            <div className="flutter-html" dangerouslySetInnerHTML={{ __html: html }} />
-            <div style={{ marginTop: 22, fontSize: 11, color: muted }}>{updatedAt ? `Actualizado: ${updatedAt}` : ""}</div>
-          </div>
-
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 76,
-              background: navBg,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-around",
-              paddingBottom: 8,
-            }}
-          >
-            <NavItem label="Guía" active />
-            <NavItem label="Inicio" />
-            <NavItem label="Calculadora" />
-            <NavItem label="Vacunas" />
-
+        <div className="rounded-b-2xl border border-black/20 bg-black p-3 shadow-2xl">
+          <div className="relative overflow-hidden" style={{ borderRadius: PHONE_RADIUS, background: bg, height: phoneH }}>
             <div
               style={{
                 position: "absolute",
                 left: "50%",
-                bottom: 6,
+                top: 8,
                 transform: "translateX(-50%)",
-                width: 120,
-                height: 5,
-                borderRadius: 999,
-                background: "rgba(255,255,255,.22)",
+                width: notchW,
+                height: notchH,
+                background: "#000",
+                borderBottomLeftRadius: 18,
+                borderBottomRightRadius: 18,
+                opacity: 0.92,
+                zIndex: 20,
               }}
             />
+
+            <div style={{ height: 44 }} />
+
+            <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", gap: 10, background: bg }}>
+              <div
+  style={{
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    display: "grid",
+    placeItems: "center",
+  }}
+>
+  <img
+    src="/icons/hamburger.png"
+    alt="Menú"
+    style={{
+      width: 18, 
+      height: 18,
+      objectFit: "contain",
+      opacity: 0.9,
+    }}
+  />
+</div>
+
+              <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+                {logoSrc ? (
+                  <img src={logoSrc} alt="logo" style={{ height: 20, objectFit: "contain", opacity: dark ? 0.95 : 0.9 }} />
+                ) : (
+                  <div style={{ fontWeight: 800, letterSpacing: 0.3, color: text, opacity: 0.85, fontSize: 12 }}>
+                    INFECTOLOGÍA
+                  </div>
+                )}
+              </div>
+
+<div
+  style={{
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    display: "grid",
+    placeItems: "center",
+  }}
+  title="Dark mode (solo visual)"
+>
+  <img
+    src="/icons/night-mode.png"
+    alt="Modo oscuro"
+    style={{
+      width: 18,
+      height: 18,
+      objectFit: "contain",
+      opacity: 0.9,
+    }}
+  />
+</div>
+            </div>
+
+            <div style={{ padding: "0 14px 10px 14px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 12px",
+                  borderRadius: 16,
+                  background: searchBg,
+                  border: `1px solid ${line}`,
+                }}
+              >
+                <div style={{ width: 18, height: 18, opacity: 0.5 }}>
+                  <div style={{ width: 12, height: 12, border: `2px solid ${muted}`, borderRadius: 999, position: "relative" }}>
+                    <div
+                      style={{
+                        position: "absolute",
+                        width: 8,
+                        height: 2,
+                        background: muted,
+                        bottom: -6,
+                        right: -6,
+                        transform: "rotate(45deg)",
+                        borderRadius: 999,
+                      }}
+                    />
+                  </div>
+                </div>
+                <div style={{ color: muted, fontSize: 13 }}>Buscar</div>
+              </div>
+            </div>
+
+            <div style={{ padding: "6px 14px 0 14px", color: text }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 28, height: 28, display: "grid", placeItems: "center", opacity: 0.9 }}>
+                  <div
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderLeft: `2px solid ${text}`,
+                      borderBottom: `2px solid ${text}`,
+                      transform: "rotate(45deg)",
+                      marginLeft: 4,
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{title || "Sin título"}</div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                top: 44 + 54 + 54 + 44,
+                bottom: 76,
+                overflow: "auto",
+                padding: "14px 18px 18px 18px",
+                color: text,
+                background: bg,
+              }}
+            >
+              <div className="flutter-html" dangerouslySetInnerHTML={{ __html: html }} />
+              <div style={{ marginTop: 22, fontSize: 11, color: muted }}>{updatedAt ? `Actualizado: ${updatedAt}` : ""}</div>
+            </div>
+
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 76,
+                background: navBg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-around",
+                paddingBottom: 8,
+              }}
+            >
+              <NavItem label="Guía" active imgSrc="/icons/clip.png" />
+              <NavItem label="Inicio" imgSrc="/icons/casa.png" />
+              <NavItem label="Calculadora" imgSrc="/icons/calculadora.png" />
+              <NavItem label="Vacunas" imgSrc="/icons/vacuna.png" />
+
+              <div
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  bottom: 6,
+                  transform: "translateX(-50%)",
+                  width: 120,
+                  height: 5,
+                  borderRadius: 999,
+                  background: "rgba(255,255,255,.22)",
+                }}
+              />
+            </div>
           </div>
-        </div>
-      </div> )}
+        </div>)}
 
       <style>{`
         .nav-item {
@@ -2362,18 +2352,50 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
     </div>
   );
 
-  function NavItem({ label, active }: { label: string; active?: boolean }) {
+  function NavItem({
+    label,
+    active,
+    imgSrc,
+  }: {
+    label: string;
+    active?: boolean;
+    imgSrc?: string;
+  }) {
     return (
       <div className="nav-item" style={{ color: active ? navActive : navMuted }}>
         <div
           style={{
-            width: 22,
-            height: 22,
-            borderRadius: 7,
-            border: `2px solid ${active ? navActive : navMuted}`,
+            width: 24,
+            height: 24,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             opacity: active ? 1 : 0.85,
           }}
-        />
+        >
+          {imgSrc ? (
+            <img
+              src={imgSrc}
+              alt={label}
+              style={{
+                width: 22,
+                height: 22,
+                objectFit: "contain",
+                filter: active ? "none" : "grayscale(100%) opacity(0.8)",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 7,
+                border: `2px solid ${active ? navActive : navMuted}`,
+              }}
+            />
+          )}
+        </div>
+
         <div>{label}</div>
       </div>
     );
