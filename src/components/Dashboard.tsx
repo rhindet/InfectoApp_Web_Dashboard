@@ -77,6 +77,45 @@ const SuccessModal: React.FC<{
   );
 };
 
+
+const SavingModal: React.FC<{
+  open: boolean;
+  title?: string;
+  message?: string;
+}> = ({
+  open,
+  title = 'Guardando...',
+  message = 'Por favor espera mientras se procesa la información.',
+}) => {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] grid place-items-center bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-busy="true"
+    >
+      <div className="w-[420px] max-w-[92vw] rounded-2xl shadow-xl overflow-hidden bg-white border border-blue-100">
+        <div className="px-6 py-6 flex items-start gap-4">
+          <div className="shrink-0 mt-0.5">
+            <div className="rounded-full p-3 bg-blue-50">
+              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-lg font-semibold text-blue-700">{title}</h3>
+            <p className="text-sm text-gray-600 mt-1">{message}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [activeView, setActiveView] =
     useState<'articles' | 'add' | 'edit' | 'view' | 'addTopic'>('articles');
@@ -250,6 +289,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     ref_tabla_nivel2?: string | null;
     ref_tabla_nivel3?: string | null;
   }) => {
+    setSaving(true);
     try {
       const res = await fetch(
         `${apiUrl}/nivelesScraping/actualizarArticulo/${data._id}`,
@@ -384,13 +424,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       case 'add':
       case 'edit':
         return (
-          <ArticleEditor
-            key={editorKey}
-            article={currentArticle || undefined}
-            onSave={handleSaveArticle}
-            onUpdate={handleUpdateArticle}
-            onCancel={() => setActiveView('articles')}
-          />
+         <ArticleEditor
+  key={editorKey}
+  article={currentArticle || undefined}
+  onSave={handleSaveArticle}
+  onUpdate={handleUpdateArticle}
+  onCancel={() => setActiveView('articles')}
+  saving={saving}
+/>
         );
       case 'view':
         return currentArticle ? (
@@ -404,12 +445,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       case 'addTopic':
         return (
           <ThemeCreator
-            key={editorKey}
-            article={currentArticle || undefined}
-            onSave={handleSaveArticle}
-            onUpdate={handleUpdateArticle}
-            onCancel={() => setActiveView('articles')}
-          />
+  key={editorKey}
+  article={currentArticle || undefined}
+  onSave={handleSaveArticle}
+  onUpdate={handleUpdateArticle}
+  onCancel={() => setActiveView('articles')}
+  saving={saving}
+/>
         );
 
       default:
@@ -484,6 +526,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       onMove={handleMoveTo}
       rootId={null}
     />
+
+
+<SavingModal
+  open={saving}
+  title="Guardando artículo..."
+  message="No cierres esta ventana mientras se completa el guardado."
+/>
 
     <SuccessModal
       open={successOpen}

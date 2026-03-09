@@ -31,6 +31,7 @@ interface ArticleEditorProps {
   onSave: (article: Partial<Article>) => void;
   onUpdate: (article: Partial<Article>) => void;
   onCancel: () => void;
+  saving?: boolean;
 }
 
 type DragState = {
@@ -184,8 +185,13 @@ function closestBlockFromSelection(root: HTMLElement): HTMLElement | null {
   return block && root.contains(block) ? block : null;
 }
 
-const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel, onUpdate }) => {
-  const [title, setTitle] = useState<string>(article?.tema ?? "");
+const ArticleEditor: React.FC<ArticleEditorProps> = ({
+  article,
+  onSave,
+  onCancel,
+  onUpdate,
+  saving = false,
+}) => {  const [title, setTitle] = useState<string>(article?.tema ?? "");
   const [content, setContent] = useState<string>(article?.contenidos?.[0] ?? "");
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -502,13 +508,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     };
   }, [sizeMenuOpen]);
 
-  const handleContentChange = () => {
-    normalizeTopLevelToParagraphs();
-    if (contentRef.current) {
-      cleanupAllFontSizeSpans(contentRef.current); // ✅ evita acumulación/nesting
-      setContent(contentRef.current.innerHTML);
-    }
-  };
+const handleContentChange = () => {
+  normalizeTopLevelToParagraphs();
+  if (contentRef.current) {
+    cleanupAllFontSizeSpans(contentRef.current);
+    cleanupAllColorSpans(contentRef.current);
+    setContent(contentRef.current.innerHTML);
+  }
+};
 
   function getSingleSelectedFontSizeSpan(range: Range, root: HTMLElement): HTMLSpanElement | null {
     // Caso 1: selección exacta de un nodo <span style="font-size:...">
@@ -714,6 +721,13 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       }
     });
 
+root.querySelectorAll("x-border").forEach((el) => {
+  const style = el.getAttribute("style") || "";
+  const borderColorMatch = style.match(/border-color\s*:\s*([^;]+)/i);
+  const borderColor = borderColorMatch?.[1]?.trim() || "#000";
+  el.setAttribute("style", `border-color:${borderColor};`);
+});
+
     root.querySelectorAll<HTMLElement>("*").forEach((el) => {
       if (el.className && /(^|\s)Mso[\w-]*/i.test(el.className)) el.removeAttribute("class");
 
@@ -810,27 +824,27 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     return top.innerHTML.trim();
   }
 
-  function addFlutterSpanAttrs(html: string): string {
-    if (!html) return html;
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(`<div id="root">${html}</div>`, "text/html");
-    const root = doc.getElementById("root") as HTMLElement;
-    if (!root) return html;
+function addFlutterSpanAttrs(html: string): string {
+  if (!html) return html;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div id="root">${html}</div>`, "text/html");
+  const root = doc.getElementById("root") as HTMLElement;
+  if (!root) return html;
 
-    root.querySelectorAll("span[style]").forEach((span) => {
-      const style = (span.getAttribute("style") || "").toLowerCase();
-      if ((style.includes("border:") || style.includes("border-width")) && !span.hasAttribute("data-border")) {
-        span.setAttribute("data-border", "1");
-      }
-      if (style.includes("background-color") && !span.hasAttribute("data-highlight")) {
-        span.setAttribute("data-highlight", "1");
-      }
-    });
+  root.querySelectorAll("span[style]").forEach((span) => {
+    const style = (span.getAttribute("style") || "").toLowerCase();
+    if (style.includes("background-color") && !span.hasAttribute("data-highlight")) {
+      span.setAttribute("data-highlight", "1");
+    }
+  });
 
-    return root.innerHTML;
-  }
+  return root.innerHTML;
+}
 
-  const applyTextColor = () => document.execCommand("foreColor", false, textColor);
+const applyTextColor = () => {
+  rememberRangeIfInside();
+  applyTextColorToSelection(textColor, lastRangeRef.current);
+};
 
   // ✅ NEW: Alineación por bloque (p/li/td/th/etc) + JUSTIFY
   type AlignMode = "left" | "center" | "right" | "justify";
@@ -983,6 +997,112 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
     return newRange.cloneRange();
   };
+
+const applyTextColorToSelection = (color: string, rangeOverride?: Range | null): Range | null => {
+  const el = contentRef.current;
+  if (!el) return null;
+
+  if (!restoreRange(rangeOverride ?? null)) {
+    if (!restoreRange()) placeCaretAtEnd(el);
+  }
+
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+
+  const range = sel.getRangeAt(0);
+
+  // MULTI-BLOCK: aplica color por bloque
+  const blocks = getSelectedBlocks(range, el);
+  if (blocks.length > 1) {
+    blocks.forEach((b) => {
+      b.style.color = color;
+
+      b.querySelectorAll("span[style*='color']").forEach((s) => {
+        (s as HTMLElement).style.color = "";
+        const st = (s as HTMLElement).getAttribute("style") || "";
+        const cleaned = st
+          .split(";")
+          .map((x) => x.trim())
+          .filter((x) => x && !/^color\s*:/i.test(x))
+          .join("; ");
+        if (cleaned) (s as HTMLElement).setAttribute("style", cleaned);
+        else (s as HTMLElement).removeAttribute("style");
+      });
+    });
+
+    cleanupAllColorSpans(el);
+    handleContentChange();
+    return range.cloneRange();
+  }
+
+  // COLLAPSED
+  if (range.collapsed) {
+    const currentSpan = closestColorSpanFromSelection(el);
+    if (currentSpan) {
+      currentSpan.style.color = color;
+      unwrapNestedColorSpansWithin(currentSpan);
+      cleanupAllColorSpans(el);
+      handleContentChange();
+
+      const sel2 = window.getSelection();
+      return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
+    }
+
+    document.execCommand("insertHTML", false, `<span style="color:${color};">\u200B</span>`);
+    normalizeTopLevelToParagraphs();
+    cleanupAllColorSpans(el);
+    handleContentChange();
+
+    const sel2 = window.getSelection();
+    return sel2 && sel2.rangeCount ? sel2.getRangeAt(0).cloneRange() : null;
+  }
+
+  // NON-COLLAPSED: si ya es un mismo span, solo cambiarlo
+  const single = getSingleSelectedColorSpan(range, el);
+  if (single) {
+    single.style.color = color;
+    unwrapNestedColorSpansWithin(single);
+    cleanupAllColorSpans(el);
+    handleContentChange();
+
+    sel.removeAllRanges();
+    const r2 = document.createRange();
+    r2.selectNodeContents(single);
+    sel.addRange(r2);
+    return r2.cloneRange();
+  }
+
+  // Caso general: wrap limpio
+  const extracted = range.extractContents();
+  const cleanedFrag = stripColorSpansFromFragment(extracted);
+
+  const wrapper = document.createElement("span");
+  wrapper.style.color = color;
+  wrapper.appendChild(cleanedFrag);
+
+  range.insertNode(wrapper);
+
+  const parentColor = wrapper.parentElement?.closest("span[style*='color']") as HTMLSpanElement | null;
+  if (parentColor && parentColor !== wrapper) {
+    parentColor.style.color = color;
+    unwrapElement(wrapper);
+    unwrapNestedColorSpansWithin(parentColor);
+  } else {
+    unwrapNestedColorSpansWithin(wrapper);
+  }
+
+  sel.removeAllRanges();
+  const newRange = document.createRange();
+  newRange.selectNodeContents(parentColor ?? wrapper);
+  sel.addRange(newRange);
+
+  normalizeTopLevelToParagraphs();
+  cleanupAllColorSpans(el);
+  handleContentChange();
+
+  return newRange.cloneRange();
+};
+
 
   // ✅ aplica tamaño desde toolbar SIN perder el cursor del input (puedes seguir tecleando)
   const applySizeFromToolbar = (n: number) => {
@@ -1177,6 +1297,116 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
       r.onerror = reject;
       r.readAsDataURL(file);
     });
+function isColorSpan(el: Element): el is HTMLSpanElement {
+  if (!(el instanceof HTMLSpanElement)) return false;
+  const c = (el.style?.color || "").trim();
+  return Boolean(c);
+}
+
+function closestColorSpanFromSelection(root: HTMLElement): HTMLSpanElement | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+
+  const node = sel.getRangeAt(0).startContainer;
+  const el = node.nodeType === 1 ? (node as Element) : node.parentElement;
+  if (!el) return null;
+
+  const hit = el.closest("span[style*='color']") as HTMLSpanElement | null;
+  if (!hit) return null;
+  return root.contains(hit) ? hit : null;
+}
+
+function unwrapNestedColorSpansWithin(container: HTMLElement) {
+  const nested = Array.from(
+    container.querySelectorAll("span[style*='color']")
+  ) as HTMLSpanElement[];
+
+  for (let i = nested.length - 1; i >= 0; i--) {
+    const s = nested[i];
+    const parent = s.parentElement;
+    if (parent && parent !== container && parent.closest("span[style*='color']")) {
+      unwrapElement(s);
+    }
+  }
+}
+
+function mergeAdjacentColorSpans(root: HTMLElement) {
+  const spans = Array.from(root.querySelectorAll("span[style*='color']")) as HTMLSpanElement[];
+
+  for (const s of spans) {
+    if (!s.parentNode) continue;
+
+    if (s.querySelector("span[style*='color']")) {
+      unwrapNestedColorSpansWithin(s);
+    }
+
+    let next = s.nextSibling;
+    while (next && next.nodeType === Node.TEXT_NODE && (next.textContent ?? "") === "") {
+      next = next.nextSibling;
+    }
+
+    while (
+      next instanceof HTMLSpanElement &&
+      isColorSpan(next) &&
+      next.style.color === s.style.color
+    ) {
+      while (next.firstChild) s.appendChild(next.firstChild);
+      const toRemove = next;
+      next = next.nextSibling;
+      toRemove.remove();
+    }
+
+    if (!s.textContent?.length && !s.children.length) s.remove();
+  }
+}
+
+function cleanupAllColorSpans(root: HTMLElement) {
+  const spans = Array.from(root.querySelectorAll("span[style*='color']")) as HTMLSpanElement[];
+  for (const s of spans) {
+    if (s.querySelector("span[style*='color']")) unwrapNestedColorSpansWithin(s);
+  }
+  mergeAdjacentColorSpans(root);
+}
+
+function stripColorSpansFromFragment(frag: DocumentFragment) {
+  const tmp = document.createElement("div");
+  tmp.appendChild(frag.cloneNode(true));
+  const spans = Array.from(tmp.querySelectorAll("span[style*='color']")) as HTMLSpanElement[];
+  for (const s of spans) unwrapElement(s);
+
+  const cleaned = document.createDocumentFragment();
+  while (tmp.firstChild) cleaned.appendChild(tmp.firstChild);
+  return cleaned;
+}
+
+function getSingleSelectedColorSpan(range: Range, root: HTMLElement): HTMLSpanElement | null {
+  const a = range.startContainer;
+  const b = range.endContainer;
+
+  if (a === b && range.startContainer.nodeType === Node.ELEMENT_NODE) {
+    const el = range.startContainer as Element;
+    const child = el.childNodes[range.startOffset];
+    if (child instanceof HTMLSpanElement && isColorSpan(child) && root.contains(child)) return child;
+  }
+
+  const startEl = (range.startContainer.nodeType === 1
+    ? (range.startContainer as Element)
+    : range.startContainer.parentElement) as Element | null;
+
+  const endEl = (range.endContainer.nodeType === 1
+    ? (range.endContainer as Element)
+    : range.endContainer.parentElement) as Element | null;
+
+  if (!startEl || !endEl) return null;
+
+  const s1 = startEl.closest("span[style*='color']") as HTMLSpanElement | null;
+  const s2 = endEl.closest("span[style*='color']") as HTMLSpanElement | null;
+
+  if (s1 && s1 === s2 && root.contains(s1)) return s1;
+
+  return null;
+}
+
 
   const handleImageFile = async (file: File) => {
     if (!file.type.startsWith("image/")) return;
@@ -1301,6 +1531,14 @@ const buildPreview = () => {
   display: block;
   margin: 8px auto;
 }
+.flutter-html x-border {
+  display: inline-block;
+  border: 1px solid;
+  padding: 2px 6px;
+  border-radius: 6px;
+  line-height: 1.2;
+  box-sizing: border-box;
+}
           .flutter-html { font-size: 14px; line-height: 1.35; }
           .flutter-html p { margin: 0 0 8px 0; }
           .flutter-html p:last-child { margin-bottom: 0; }
@@ -1313,7 +1551,10 @@ const buildPreview = () => {
   text-underline-offset: 2px;
   font-weight: 600;
   word-break: break-word;
-}          .flutter-html ul, .flutter-html ol { margin: 0 0 8px 0; padding-left: 1.25rem; }
+  
+} 
+
+.flutter-html ul, .flutter-html ol { margin: 0 0 8px 0; padding-left: 1.25rem; }
           .flutter-html li { margin: 0; }
           .flutter-html table { width: 100%; border-collapse: collapse; margin: 8px 0; }
           .flutter-html th, .flutter-html td { border: 1px solid #e5e7eb; padding: 6px; vertical-align: top; }
@@ -1347,24 +1588,30 @@ const buildPreview = () => {
             Previsualizar
           </button>
 
-          <button
-            onClick={handleSave}
-            disabled={!title.trim() || !content.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-            type="button"
-          >
-            {isEditing ? <Save className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
-            {isEditing ? "ACTUALIZAR" : "CREAR"}
-          </button>
-
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors flex items-center gap-2"
-            type="button"
-          >
-            <X className="w-4 h-4" />
-            Cancelar
-          </button>
+         <button
+  onClick={handleSave}
+  disabled={saving || !title.trim() || !content.trim()}
+  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+  type="button"
+>
+  {saving ? (
+    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+  ) : isEditing ? (
+    <Save className="w-4 h-4" />
+  ) : (
+    <PlusCircle className="w-4 h-4" />
+  )}
+  {saving ? "GUARDANDO..." : isEditing ? "ACTUALIZAR" : "CREAR"}
+</button>
+<button
+  onClick={onCancel}
+  disabled={saving}
+  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+  type="button"
+>
+  <X className="w-4 h-4" />
+  Cancelar
+</button>
         </div>
       </div>
 
@@ -1497,30 +1744,50 @@ const buildPreview = () => {
 
           {/* ✅ ENMARCAR */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={() =>
-                formatText(
-                  "insertHTML",
-                  `<span data-border="1" style="border:1px solid ${borderColor};padding:2px 6px;border-radius:6px;display:inline-block;">${escapeHtml(window.getSelection()?.toString() || "") || "&nbsp;"
-                  }</span>`
-                )
-              }
-              className="p-2 hover:bg-gray-200 rounded"
-              title="Enmarcar"
-              type="button"
-            >
-              <Square className="w-4 h-4" />
-            </button>
+<button
+  onMouseDown={(e) => {
+    e.preventDefault();
+    rememberRangeIfInside();
+  }}
+  onClick={() => {
+    const selectedText = lastRangeRef.current?.toString() ?? "";
+
+    formatText(
+      "insertHTML",
+      `<x-border style="border-color:${borderColor};">${escapeHtml(selectedText) || "&nbsp;"}</x-border>`
+    );
+  }}
+  className="p-2 hover:bg-gray-200 rounded"
+  title="Enmarcar"
+  type="button"
+>
+  <Square className="w-4 h-4" />
+</button>
             <input type="color" value={borderColor} onChange={(e) => setBorderColor(e.target.value)} />
           </div>
 
-          {/* ✅ COLOR TEXTO */}
-          <div className="flex items-center gap-2">
-            <button onClick={applyTextColor} className="p-2 hover:bg-gray-200 rounded" title="Color de texto" type="button">
-              <Type className="w-4 h-4" />
-            </button>
-            <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} />
-          </div>
+         <div className="flex items-center gap-2">
+  <button
+    onMouseDown={() => rememberRangeIfInside()}
+    onClick={applyTextColor}
+    className="p-2 hover:bg-gray-200 rounded"
+    title="Aplicar color de texto"
+    type="button"
+  >
+    <Type className="w-4 h-4" />
+  </button>
+
+  <input
+    type="color"
+    value={textColor}
+    onMouseDown={() => rememberRangeIfInside()}
+    onChange={(e) => {
+      const c = e.target.value;
+      setTextColor(c);
+      applyTextColorToSelection(c, lastRangeRef.current);
+    }}
+  />
+</div>
 
           {/* ✅ Tamaño estilo Word: input + dropdown */}
           <div className="flex items-center gap-2">
