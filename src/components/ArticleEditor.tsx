@@ -632,6 +632,70 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
     }
   };
 
+  function linkifyPlainUrls(html: string): string {
+  if (!html) return html;
+
+  const protectedBlocks: string[] = [];
+  let protectedHtml = html;
+
+  // Proteger bloques donde NO debemos tocar texto
+  const blockRegex =
+    /(<a\b[^>]*>[\s\S]*?<\/a>)|(<img\b[^>]*>)|(<script\b[^>]*>[\s\S]*?<\/script>)|(<style\b[^>]*>[\s\S]*?<\/style>)|(<code\b[^>]*>[\s\S]*?<\/code>)|(<pre\b[^>]*>[\s\S]*?<\/pre>)/gi;
+
+  protectedHtml = protectedHtml.replace(blockRegex, (match) => {
+    const token = `___HTML_BLOCK_${protectedBlocks.length}___`;
+    protectedBlocks.push(match);
+    return token;
+  });
+
+  // Separar tags de texto para no tocar atributos HTML
+  const parts = protectedHtml.split(/(<[^>]+>)/g);
+
+  // Detecta:
+  // - http://...
+  // - https://...
+  // - www....
+  // - dominio.com/ruta
+  const urlRegex =
+    /((?:https?:\/\/|www\.)[^\s<]+|(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/[^\s<]*)?)/gi;
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+
+    // Si es tag, no tocar
+    if (part.startsWith("<") && part.endsWith(">")) continue;
+
+    parts[i] = part.replace(urlRegex, (rawUrl) => {
+      let url = rawUrl;
+      let trailing = "";
+
+      // quitar puntuación final común
+      while (/[.,;!?]+$/.test(url)) {
+        trailing = url[url.length - 1] + trailing;
+        url = url.slice(0, -1);
+      }
+
+      const lower = url.toLowerCase();
+      const href =
+        lower.startsWith("http://") || lower.startsWith("https://")
+          ? url
+          : `https://${url}`;
+
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>${trailing}`;
+    });
+  }
+
+  protectedHtml = parts.join("");
+
+  // Restaurar bloques protegidos
+  for (let i = 0; i < protectedBlocks.length; i++) {
+    protectedHtml = protectedHtml.replace(`___HTML_BLOCK_${i}___`, protectedBlocks[i]);
+  }
+
+  return protectedHtml;
+}
+
+
   function cleanHtml(dirty: string): string {
     if (!dirty) return "";
     const raw = dirty.replace(/\uFEFF/g, "").trim();
@@ -1128,16 +1192,17 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
   };
 
   // ✅ Construye HTML EXACTO como Flutter (clean + attrs + p-empty)
-  const buildPreview = () => {
-    const tema = title.trim() || "Sin título";
-    const raw = (contentRef.current?.innerHTML ?? "").trim() || "<p><br></p>";
+const buildPreview = () => {
+  const tema = title.trim() || "Sin título";
+  const raw = (contentRef.current?.innerHTML ?? "").trim() || "<p><br></p>";
 
-    const cleaned0 = addFlutterSpanAttrs(cleanHtml(raw));
-    const cleaned = cleaned0.replace(/<p><br><\/p>/gi, '<p class="p-empty"><br></p>');
+  const cleaned0 = addFlutterSpanAttrs(cleanHtml(raw));
+  const cleaned1 = cleaned0.replace(/<p><br><\/p>/gi, '<p class="p-empty"><br></p>');
+  const cleaned2 = linkifyPlainUrls(cleaned1);
 
-    setPreviewTitle(tema);
-    setPreviewHtml(cleaned);
-  };
+  setPreviewTitle(tema);
+  setPreviewHtml(cleaned2);
+};
 
   const openPreview = () => {
     buildPreview();
@@ -1242,8 +1307,13 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
           .flutter-html p.p-empty { margin: 0 0 8px 0; }
           .flutter-html h1 { font-size: 26px; font-weight: 800; margin: 0 0 10px 0; }
           .flutter-html h2 { font-size: 18px; font-weight: 800; margin: 14px 0 8px 0; }
-          .flutter-html a { text-decoration: underline; font-weight: 600; }
-          .flutter-html ul, .flutter-html ol { margin: 0 0 8px 0; padding-left: 1.25rem; }
+.flutter-html a {
+  color: #0A66C2;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 600;
+  word-break: break-word;
+}          .flutter-html ul, .flutter-html ol { margin: 0 0 8px 0; padding-left: 1.25rem; }
           .flutter-html li { margin: 0; }
           .flutter-html table { width: 100%; border-collapse: collapse; margin: 8px 0; }
           .flutter-html th, .flutter-html td { border: 1px solid #e5e7eb; padding: 6px; vertical-align: top; }
@@ -1454,85 +1524,49 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article, onSave, onCancel
 
           {/* ✅ Tamaño estilo Word: input + dropdown */}
           <div className="flex items-center gap-2">
-            <div className="relative" ref={sizeMenuRef}>
-              <button
-                type="button"
-                className="px-2 py-1 border rounded text-sm hover:bg-gray-200 flex items-center gap-1"
-                onMouseDown={() => {
-                  rememberRangeIfInside();
-                  if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
-                }}
-                onClick={() => setSizeMenuOpen((s) => !s)}
-                title="Tamaños"
-              >
-                {fontSizePx}
-                <ChevronDown className="w-4 h-4" />
-              </button>
+  <div className="relative" ref={sizeMenuRef}>
+    <button
+      type="button"
+      className="px-2 py-1 border rounded text-sm hover:bg-gray-200 flex items-center gap-1"
+      onMouseDown={() => {
+        rememberRangeIfInside();
+        if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
+      }}
+      onClick={() => setSizeMenuOpen((s) => !s)}
+      title="Tamaños"
+    >
+      {fontSizePx}
+      <ChevronDown className="w-4 h-4" />
+    </button>
 
-              {sizeMenuOpen && (
-                <div className="absolute z-50 mt-1 w-[110px] max-h-64 overflow-auto bg-white border rounded shadow">
-                  {SIZES.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        rememberRangeIfInside();
-                        if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
-                      }}
-                      onClick={() => {
-                        setFontSizePx(s);
-                        setFontSizeInput(String(s));
-                        applySizeFromToolbar(s);
-                        setSizeMenuOpen(false);
-                      }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+    {sizeMenuOpen && (
+      <div className="absolute z-50 mt-1 w-[110px] max-h-64 overflow-auto bg-white border rounded shadow">
+        {SIZES.map((s) => (
+          <button
+            key={s}
+            type="button"
+            className="w-full text-left px-2 py-1 text-sm hover:bg-gray-100"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              rememberRangeIfInside();
+              if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
+            }}
+            onClick={() => {
+              setFontSizePx(s);
+              applySizeFromToolbar(s);
+              setSizeMenuOpen(false);
+            }}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+    )}
+  </div>
+</div>
 
-            <input
-              ref={fontSizeInputRef}
-              type="text"
-              inputMode="numeric"
-              value={fontSizeInput}
-              onMouseDown={() => {
-                rememberRangeIfInside();
-                if (lastRangeRef.current) sizeRangeRef.current = lastRangeRef.current.cloneRange();
-              }}
-              onChange={(e) => {
-                const v = e.target.value.replace(/[^\d]/g, "");
-                setFontSizeInput(v);
 
-                if (v !== "") {
-                  const n = Number(v);
-                  if (Number.isFinite(n)) {
-                    setFontSizePx(n);
-                    applySizeFromToolbar(n);
-                  }
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  setSizeMenuOpen(false);
-                  contentRef.current?.focus();
-                }
-              }}
-              onBlur={() => {
-                if (!fontSizeInput.trim()) setFontSizeInput(String(fontSizePx));
-              }}
-              className="w-[86px] border rounded p-1 text-sm"
-              title="Tamaño (px)"
-              placeholder="14"
-            />
 
-            <span className="text-xs text-gray-500 select-none">px</span>
-          </div>
         </div>
 
         <div className="relative">
@@ -2074,3 +2108,4 @@ const FlutterPhonePreview: React.FC<FlutterPhonePreviewProps> = ({
     );
   }
 };
+
